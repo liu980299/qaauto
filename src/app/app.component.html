@@ -1,0 +1,61 @@
+
+<as-split direction="horizontal" [restrictMove]="true" [useTransition]="true">
+  <as-split-area [size]="20">
+    <mat-tab-group>
+      <mat-tab [label]="env.name" *ngFor="let env of data">
+        <mat-tree [dataSource]="env.data" [treeControl]="treeControl" class="qaauto-tree">
+          <!-- This is the tree node template for leaf nodes -->
+          <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
+            <button  class="scenario-text" (click)="selectNode(node)" [class.selected]="node.data.selected">{{node.name}}</button>
+        </mat-tree-node>
+          <!-- There is inline padding applied to this node using styles.
+            This padding value depends on the mat-icon-button width. -->
+          <!-- This is the tree node template for expandable nodes -->
+          <mat-nested-tree-node *matTreeNodeDef="let node; when: hasChild">
+              <div class="mat-tree-node">
+                <button mat-icon-button matTreeNodeToggle
+                        [attr.aria-label]="'Toggle ' + node.name">
+                  <mat-icon class="mat-icon-rtl-mirror">
+                    {{treeControl.isExpanded(node) ? 'expand_more' : 'chevron_right'}}
+                  </mat-icon>
+                </button>
+                {{node.name}}
+              </div>
+              <!-- There is inline padding applied to this div using styles.
+                  This padding value depends on the mat-icon-button width.  -->
+              <div [class.qaauto-tree-invisible]="!treeControl.isExpanded(node)"
+                  role="group">
+                <ng-container matTreeNodeOutlet></ng-container>
+            </div>
+          </mat-nested-tree-node>
+        </mat-tree>
+      </mat-tab>
+    </mat-tab-group>
+
+  </as-split-area>
+  <as-split-area [size]="80">
+    <as-split direction="vertical" >
+    <as-split-area >
+      <mat-tab-group *ngIf="frontend">
+        <mat-tab label="Steps">          
+          <a *ngIf="frontend.url" [href]="frontend.url" target="_blank"><h3>{{frontend.name}}</h3></a>
+          <b>End Time:{{frontend.end_time}}</b>
+          <div *ngFor="let step of frontend.steps">{{step}}</div>
+          <div class="error">{{frontend.failed_step}}</div>
+        </mat-tab>
+        <mat-tab label="Error Message"><p class="text">{{frontend.error_message}}</p></mat-tab>
+          
+        <mat-tab label="Screenshot"><img [src]="frontend.img"></mat-tab>
+      
+        <mat-tab label="Console Log"><p class="text">{{frontend.console_log}}</p></mat-tab>
+      </mat-tab-group>
+    </as-split-area>    
+    <as-split-area >
+      <mat-tab-group *ngIf="backend">
+        <mat-tab *ngFor="let server of backend" [label] = "server.name"><div class="text" *ngFor="let line of server.logs">{{line.log_time}}:{{line.content}}<hr></div></mat-tab>
+      </mat-tab-group>
+    </as-split-area>
+    </as-split>
+  </as-split-area>
+
+</as-split>
