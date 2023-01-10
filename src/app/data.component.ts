@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http'; 
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-
+declare var report_url: any;
 @Injectable()
 export class DataService {
    constructor(private http: HttpClient) {
@@ -11,6 +11,6 @@ export class DataService {
     }
 
     public getJSON(): Observable<any> {
-        return this.http.get("./assets/analysis.json");
+        return this.http.get(report_url + "./analysis.json");
     }
 }

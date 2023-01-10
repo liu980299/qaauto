@@ -35,8 +35,9 @@
   </as-split-area>
   <as-split-area [size]="80">
     <as-split direction="vertical" >
-    <as-split-area >
+    <as-split-area id="frontend">      
       <mat-tab-group *ngIf="frontend">
+        
         <mat-tab label="Steps">          
           <a *ngIf="frontend.url" [href]="frontend.url" target="_blank"><h3>{{frontend.name}}</h3></a>
           <b>End Time:{{frontend.end_time}}</b>
@@ -47,10 +48,11 @@
           
         <mat-tab label="Screenshot"><img [src]="frontend.img"></mat-tab>
       
-        <mat-tab label="Console Log"><p class="text">{{frontend.console_log}}</p></mat-tab>
+        <mat-tab label="Console Log"><b>{{frontend.console_log[0]}}</b>
+          <p *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</p></mat-tab>
       </mat-tab-group>
     </as-split-area>    
-    <as-split-area >
+    <as-split-area >        
       <mat-tab-group *ngIf="backend">
         <mat-tab *ngFor="let server of backend" [label] = "server.name"><div class="text" *ngFor="let line of server.logs">{{line.log_time}}:{{line.content}}<hr></div></mat-tab>
       </mat-tab-group>

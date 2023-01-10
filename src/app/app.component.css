@@ -1,7 +1,29 @@
 .qaauto-tree-invisible {
     display: none;
   }
+  .header {
+    padding: 10px 16px;
+    background: #555;
+    color: #f1f1f1;
+    position: sticky;
+    top: 0;
+    width: 100%
+  }
 
+  :host ::ng-deep .mat-mdc-tab:not(.mat-mdc-tab-disabled) .mdc-tab__text-label{
+    color: #f1f1f1 !important;
+  }
+  :host ::ng-deep .mat-mdc-tab:not(.mat-mdc-tab-disabled).mdc-tab--active .mdc-tab__text-label{
+    color:aqua !important;
+  }
+  :host ::ng-deep mat-tab-header {
+    top: 0;
+    z-index: 1000; 
+    background: #555;
+    color: #f1f1f1;
+    position: sticky;
+    position: -webkit-sticky; /* macOS/iOS Safari */    
+}
   .selected{
     background-color: aqua;
   }

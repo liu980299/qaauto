@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { DataService } from './data.component';
 import {NestedTreeControl} from '@angular/cdk/tree';
 import {MatTreeNestedDataSource} from '@angular/material/tree';
-
+declare var report_url: any;
 interface TestNode {
   name: string;
   children?: TestNode[];
@@ -79,9 +79,11 @@ export class AppComponent implements OnInit {
     console.log(node);
     node.data.selected=true;
     this.frontend= node.data;
-    if (this.frontend.img.indexOf("asset") < 0){
-      this.frontend.img = "./assets/" + this.frontend.img;
+    if (this.frontend.img.indexOf(report_url) < 0){
+      this.frontend.img = report_url + this.frontend.img;
     }
+    //   this.frontend.img = "./assets/" + this.frontend.img;
+    // }
     this.frontend.name = node.name;
     this.backend = [];
     for (let server in node.data.logs){
