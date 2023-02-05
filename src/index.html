@@ -9,9 +9,31 @@
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <script type="text/javascript">report_url="."</script>
+  <script type="text/javascript">report_url="/assets/"</script>
+  <style>
+    @keyframes spin {
+      0%   {transform: rotate(0deg);}
+
+      100% {transform: rotate(360deg);}
+    }
+    .text {
+      margin: 50px auto;
+      z-index:10;
+      text-align:center;    
+    }
+    .loader {
+    margin: 50px auto 0;
+    border: 16px solid #f3f3f3;
+    border-top: 16px solid #3498db;
+    border-radius: 50%;
+    width: 120px;
+    height: 120px;
+    animation: spin 2s linear infinite;
+    }
+  </style>
 </head>
 <body class="mat-typography">
+  <div id="loading_mask"> <div class="loader"></div><h1 class="text">Loading</h1></div>
   <app-root></app-root>
 </body>
 </html>

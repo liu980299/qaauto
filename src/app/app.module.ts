@@ -1,7 +1,6 @@
-import { NgModule } from '@angular/core';
+import { NgModule,ApplicationInitStatus, APP_INITIALIZER } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { HttpClientModule } from '@angular/common/http';
-import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 import { AngularSplitModule } from 'angular-split';
@@ -10,6 +9,9 @@ import {MatTabsModule} from '@angular/material/tabs';
 import {MatTreeModule} from '@angular/material/tree';
 import {MatIconModule} from '@angular/material/icon';
 import {MatButtonModule} from '@angular/material/button';
+import {MatTableModule} from '@angular/material/table'
+import { NgChartsModule } from 'ng2-charts';
+
 
 
 @NgModule({
@@ -23,11 +25,13 @@ import {MatButtonModule} from '@angular/material/button';
     MatButtonModule,
     MatIconModule,
     BrowserModule,
-    AppRoutingModule,
+    MatTableModule,
     AngularSplitModule,
-    BrowserAnimationsModule
+    BrowserAnimationsModule,
+    NgChartsModule
   ],
-  providers: [DataService],
+  providers: [DataService
+  ],
   bootstrap: [AppComponent]
 })
 export class AppModule { }

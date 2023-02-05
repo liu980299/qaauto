@@ -13,4 +13,8 @@ export class DataService {
     public getJSON(): Observable<any> {
         return this.http.get(report_url + "./analysis.json");
     }
+    public getData(json_url:string): Observable<any>{
+        return this.http.get(report_url + json_url);
+
+    }
 }
