@@ -2,15 +2,37 @@
   pre{
     white-space: pre-wrap;
   }
-  @keyframes spin {
-  0% {
-  transform: rotate(0deg);
-  }
-  100% {
-  transform: rotate(360deg);
-  }
-  }
+mat-tab-group {
+  height: 100%;
+}
 
+.vertical_tabs{
+    flex-direction: row;
+    
+    
+} 
+
+:host /deep/ .vertical_tabs .mdc-tab{
+  min-width: 35px;
+  padding-left: 5px;
+  padding-top: 30px;
+  padding-bottom: 30px;
+  padding-right: 5px;
+}
+
+:host /deep/ .mat-mdc-tab-body-wrapper{
+  height: 100%;
+}
+
+:host /deep/ .vertical_tabs .mat-mdc-tab-labels  {
+  flex-direction: column;
+}
+
+:host /deep/ .vertical_tabs .mdc-tab{
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  border-top:double;
+}
 .qaauto-tree-invisible {
     display: none;
   }
@@ -29,7 +51,16 @@
   :host ::ng-deep .mat-mdc-tab:not(.mat-mdc-tab-disabled).mdc-tab--active .mdc-tab__text-label{
     color:aqua !important;
   }
-  :host ::ng-deep mat-tab-header {
+  :host /deep/ .vertical-tabs mat-tab-header {
+    top: 0;
+    z-index: 1000; 
+    background: rgb(85, 2, 54);
+    color: #f1f1f1;
+    position: sticky;
+    position: -webkit-sticky; /* macOS/iOS Safari */    
+}
+
+  :host /deep/ mat-tab-header {
     top: 0;
     z-index: 1000; 
     background: #555;

@@ -3,7 +3,9 @@
   <as-split-area [size]="20">
     <mat-tab-group (selectedIndexChange)="changeEnv($event)">
       <mat-tab [label]="env.name" *ngFor="let env of data">
-        <mat-tree [dataSource]="env.data" [treeControl]="treeControl" class="qaauto-tree">
+        <mat-tab-group class="vertical_tabs">
+          <mat-tab [label]="perspective.name" *ngFor="let perspective of env.perspectives" class="vertical_tabs_label">
+        <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree">
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
             <button  class="scenario-text" (click)="selectNode(node)" [class.selected]="node.data.selected">{{node.name}}</button>
@@ -29,6 +31,8 @@
             </div>
           </mat-nested-tree-node>
         </mat-tree>
+      </mat-tab>
+      </mat-tab-group>
       </mat-tab>
     </mat-tab-group>
 

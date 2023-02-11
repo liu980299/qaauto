@@ -46,8 +46,16 @@ export class AppComponent implements OnInit {
       this.data = [];
       this.summarys = [];
       for(let key in data){
-        var env_data = {name:data[key].Env,data:new MatTreeNestedDataSource<TestNode>(),selected:false};
+        
+        var context_data = {name:"Pages",data:new MatTreeNestedDataSource<TestNode>(),selected:false};
+        var cucumber_data = {name:"Tests",data:new MatTreeNestedDataSource<TestNode>(),selected:false};
         var tests:TestNode[] = [];
+        var pages:TestNode[] = [];
+        for (let page in data[key].context){
+          var page_data = data[key].context[page];
+          var page_node = this.getPageNode(page,page_data);
+          pages.push(page_node);
+        }
         var auto_tests = 0
         var jobs:TestNode[] = [];        
         var auto_node:TestNode = {name:"Automation Test",children:[]}
@@ -94,7 +102,9 @@ export class AppComponent implements OnInit {
           auto_node.name += "(" + auto_tests + ")"
         }
         tests.push(auto_node);
-        env_data.data.data = tests;         
+        cucumber_data.data.data = tests;
+        context_data.data.data = pages;
+        var env_data = {name:data[key].Env,perspectives:[cucumber_data,context_data],selected:false};
         this.data.push(env_data); 
         var summary_data = {name:data[key].Env,data:data[key].summary};
         summary_data.data.sort((a:any,b:any)=>(a["Started on"] > b["Started on"])?1:((b["Started on"] > a["Started on"])?-1:0))
@@ -105,8 +115,25 @@ export class AppComponent implements OnInit {
       this.initialized = true;      
       document.getElementById("loading_mask")!.style.display = "none";  
       this.setReportData();    
-     });
-    
+     });     
+  }
+  getPageNode(page_name:string,page_data:any){
+    var page_node:TestNode = {name:page_name,children:[]};
+    if (page_data.scenarios){
+      for(let scenario of page_data.scenarios){
+        var scenario_node:TestNode = {name:scenario.name,data:scenario.data,children:[]};
+        page_node.children?.push(scenario_node);
+      } 
+    }
+    for (let child in page_data){
+      if (child != "scenarios"){
+        var child_data = page_data[child];
+        var child_node = this.getPageNode(child,child_data)
+        page_node.children?.push(child_node);
+      }
+    }
+    page_node.name = page_node.name + "(" + page_node.children?.length + ")"
+    return page_node;
   }
   hasChild = (_: number, node: TestNode) => !!node.children && node.children.length > 0;
   title = 'qa_auto';
@@ -138,9 +165,10 @@ export class AppComponent implements OnInit {
         tension: 0,
         borderColor: color,
         backgroundColor: 'rgba(255,0,0,0.3)'
-        }
-        this.lineChartData.datasets=[dataset]
-      this.chart?.chart?.update();
+      }
+      this.lineChartData.datasets=[dataset]
+      console.log(this.chart);      
+      this.updateReportChart();
       this.datasources=node.data.data;
     }else{
       this.dataService.getData(node.data.url).subscribe({next:(data)=>{
@@ -209,6 +237,10 @@ export class AppComponent implements OnInit {
 
     }
     this.lineChartData.datasets = [dataset,totalset];
+    this.chart?.chart?.update();      
+  }
+  updateReportChart(){
+    this.lineChartOptions = {...this.lineChartOptions};
   }
   clearNodes(){
     for (let env_data of this.data){
