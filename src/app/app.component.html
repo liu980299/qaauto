@@ -1,14 +1,14 @@
 
 <as-split direction="horizontal" [restrictMove]="true" [useTransition]="true" *ngIf="initialized">
   <as-split-area [size]="20">
-    <mat-tab-group (selectedIndexChange)="changeEnv($event)">
+    <mat-tab-group (selectedIndexChange)="changeEnv($event)" [selectedIndex]="selectIndex">
       <mat-tab [label]="env.name" *ngFor="let env of data">
         <mat-tab-group class="vertical_tabs">
           <mat-tab [label]="perspective.name" *ngFor="let perspective of env.perspectives" class="vertical_tabs_label">
-        <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree">
+        <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
-            <button  class="scenario-text" (click)="selectNode(node)" [class.selected]="node.data.selected">{{node.name}}</button>
+            <button  class="scenario-text" (click)="selectNode(node)"  [class.jira]="node.data.JIRA && !node.data.selected" [class.selected]="node.data.selected">{{node.name}}</button>
         </mat-tree-node>
           <!-- There is inline padding applied to this node using styles.
             This padding value depends on the mat-icon-button width. -->
@@ -57,6 +57,11 @@
         
         <mat-tab label="Steps">          
           <a *ngIf="frontend.url" [href]="frontend.url" target="_blank"><h3>{{frontend.name}}</h3></a>
+          <h3 *ngIf="frontend.jira">Jira:
+            <li *ngFor="let jira of frontend.jira.split(',')">
+              <a href="{{jira_url}}{{jira}}" target="_blank">{{jira}}</a>
+            </li>
+          </h3>
           <b>End Time:{{frontend.end_time}}</b>
           <div *ngFor="let step of frontend.steps"><p [ngClass] = "{'error':step.result === 'failed'}">{{step.name}}</p>
           <table *ngIf="step.table" style="border:double"><tr *ngFor="let row of step.table">
@@ -65,10 +70,12 @@
         </mat-tab>
         <mat-tab label="Error Message"><pre class="text">{{frontend.error_message}}</pre></mat-tab>
           
-        <mat-tab label="Screenshot"><img [src]="frontend.img"></mat-tab>
+        <mat-tab label="Screenshot"><img [src]="frontend.img" *ngIf="frontend.img"></mat-tab>
       
-        <mat-tab label="Console Log"><b>{{frontend.console_log[0]}}</b>
-          <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre></mat-tab>
+        <mat-tab label="Console Log"><div *ngIf="frontend.console_log"><b>{{frontend.console_log[0]}}</b>
+          <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre>
+          </div>
+        </mat-tab>
       </mat-tab-group>
     </as-split-area>    
     <as-split-area >     
@@ -83,7 +90,7 @@
         </table>
       </div>
       <mat-tab-group *ngIf="!is_report && backend">
-        <mat-tab *ngFor="let server of backend" [label] = "server.name"><div class="text" *ngFor="let line of server.logs">{{line.log_time}}:{{line.content}}<hr></div></mat-tab>
+        <mat-tab *ngFor="let server of backend" [label] = "server.name"><div class="text" *ngFor="let line of server.logs" [ngClass] = "{'error':test_user_id.length > 0 && line.content.indexOf(test_user_id) > 0}">{{line.log_time}}:{{line.content}}<hr></div></mat-tab>
       </mat-tab-group>
     </as-split-area>
     </as-split>

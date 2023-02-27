@@ -4,7 +4,7 @@ import {NestedTreeControl} from '@angular/cdk/tree';
 import {MatTreeNestedDataSource} from '@angular/material/tree';
 import { ChartConfiguration, ChartOptions, ChartType } from "chart.js";
 import { BaseChartDirective } from 'ng2-charts';
-declare var report_url: any;
+declare var report_url: any,jira_url:any;
 interface TestNode {
   name: string;
   children?: TestNode[];
@@ -37,14 +37,26 @@ export class AppComponent implements OnInit {
   public lineChartLegend = true;
   selectIndex = 0;
   report_name = "";
+  jira_url = jira_url;
   headers:string[] = [];
   datasources:any;
+  test_user_id:string = "";
+  test_id:string = "";
   constructor(private dataService: DataService
     ){}
   ngOnInit(){
+    
+    if (window.parent){
+      this.test_id = window.parent.location.hash;      
+    }else{
+      this.test_id = window.location.hash;
+    }
+    if(this.test_id.startsWith("#")){
+      this.test_id = this.test_id.substring(1);
+    }
     this.dataService.getJSON().subscribe(data=>{
       this.data = [];
-      this.summarys = [];
+      this.summarys = [];           
       for(let key in data){
         
         var context_data = {name:"Pages",data:new MatTreeNestedDataSource<TestNode>(),selected:false};
@@ -53,16 +65,20 @@ export class AppComponent implements OnInit {
         var pages:TestNode[] = [];
         for (let page in data[key].context){
           var page_data = data[key].context[page];
-          var page_node = this.getPageNode(page,page_data);
-          pages.push(page_node);
+          if ( page != "scenarios"){
+            var page_node = this.getPageNode(page,page_data);
+            pages.push(page_node);  
+          }
         }
         var auto_tests = 0
         var jobs:TestNode[] = [];        
         var auto_node:TestNode = {name:"Automation Test",children:[]}
         for(let job in data[key].jobs){
           var job_item = data[key].jobs[job];
+          var find_feature = false;
           var job_data:TestNode = {name:job,children:[]};
           var job_length = 0;
+          var expand_nodes:any = {};
           if (job_item._type && job_item._type == 'report'){
             console.log(job_item);
             for(let scenario in job_item.scenarios){
@@ -72,7 +88,7 @@ export class AppComponent implements OnInit {
             }
             tests.push(job_data)
           }else{
-            for (let feature in data[key].jobs[job]){
+            for (let feature in data[key].jobs[job]){              
               var feature_item = data[key].jobs[job][feature];
               var feature_data:TestNode = {name:feature,children:[]}
                 for(let scenario in feature_item.scenarios){
@@ -80,6 +96,10 @@ export class AppComponent implements OnInit {
                   if (feature_data.children){
                     feature_data.children.push(scenario_data);
                   }              
+                  if (this.test_id != "" && scenario_data.data.url.indexOf(this.test_id) > 0){
+                    expand_nodes["feature"] = feature_data;
+                    expand_nodes["job"] = job_data;                                                            
+                  }
                 }             
               var feature_length = feature_data.children? feature_data.children.length:0;
               job_length = job_length + feature_length;
@@ -89,6 +109,9 @@ export class AppComponent implements OnInit {
               if (job_data.children){
                 job_data.children.push(feature_data);
               }            
+              if (find_feature){
+                this.treeControl.expand(job_data);
+              }
             }
             if (job_length > 0){
               job_data.name = job_data.name + "(" + job_length + ")"
@@ -103,36 +126,68 @@ export class AppComponent implements OnInit {
         }
         tests.push(auto_node);
         cucumber_data.data.data = tests;
+        if (this.test_id != ""){
+          this.treeControl.expand(cucumber_data);
+        }
         context_data.data.data = pages;
         var env_data = {name:data[key].Env,perspectives:[cucumber_data,context_data],selected:false};
         this.data.push(env_data); 
         var summary_data = {name:data[key].Env,data:data[key].summary};
         summary_data.data.sort((a:any,b:any)=>(a["Started on"] > b["Started on"])?1:((b["Started on"] > a["Started on"])?-1:0))
-        this.summarys.push(summary_data);
+        this.summarys.push(summary_data);      
       }
       this.data.sort((a:any,b:any)=>(a.name > b.name)?1:((b.name > a.name)?-1:0));  
+      this.expandNode();
       this.summarys.sort((a:any,b:any)=>(a.name > b.name)?1:((b.name > a.name)?-1:0));
       this.initialized = true;      
       document.getElementById("loading_mask")!.style.display = "none";  
       this.setReportData();    
      });     
   }
+
+  expandNode(){
+    var env_index = 0;
+    if(this.test_id != "") {
+      for (let env_data of this.data){
+        var cucumber_test = env_data.perspectives[0].data;
+        var auto_test = cucumber_test._data._value[1];
+        for (let job of auto_test.children){
+          for(let feature of job.children){
+            for(let scenario of feature.children){
+              if (scenario.data.url.indexOf(this.test_id) > 0){
+                this.treeControl.expand(auto_test);
+                this.treeControl.expand(job);
+                this.treeControl.expand(feature);
+                this.selectNode(scenario);
+                this.selectIndex = env_index
+                return
+              }
+            }
+          }
+        }
+        env_index++;
+      }  
+    }
+  }
+
   getPageNode(page_name:string,page_data:any){
-    var page_node:TestNode = {name:page_name,children:[]};
+    var page_node:TestNode = {name:page_name,data:{scenarios:0},children:[]};
     if (page_data.scenarios){
       for(let scenario of page_data.scenarios){
         var scenario_node:TestNode = {name:scenario.name,data:scenario.data,children:[]};
         page_node.children?.push(scenario_node);
       } 
+      page_node.data.scenarios = page_data.scenarios.length;
     }
     for (let child in page_data){
       if (child != "scenarios"){
         var child_data = page_data[child];
         var child_node = this.getPageNode(child,child_data)
         page_node.children?.push(child_node);
+        page_node.data.scenarios += child_node.data.scenarios;
       }
     }
-    page_node.name = page_node.name + "(" + page_node.children?.length + ")"
+    page_node.name = page_node.name + "(" + page_node.data.scenarios + ")"
     return page_node;
   }
   hasChild = (_: number, node: TestNode) => !!node.children && node.children.length > 0;
@@ -171,6 +226,12 @@ export class AppComponent implements OnInit {
       this.updateReportChart();
       this.datasources=node.data.data;
     }else{
+      var id_names= node.data.url.split("/");
+      if (window.parent){
+        window.parent.location.hash = id_names[id_names.length - 1].split(".")[0];
+      }else{
+        window.location.hash = id_names[id_names.length - 1].split(".")[0];
+      }    
       this.dataService.getData(node.data.url).subscribe({next:(data)=>{
         node.data.data=data;
         this.setData(node)
@@ -184,13 +245,21 @@ export class AppComponent implements OnInit {
     if (node.data.selected){
         this.is_report = false;
         this.frontend= node.data.data;
-        if (this.frontend.img.indexOf(report_url) < 0){
+        if (node.data.JIRA){
+          this.frontend.jira = node.data.JIRA;
+        }
+        if (this.frontend.img && this.frontend.img.indexOf(report_url) < 0){
           this.frontend.img = report_url + this.frontend.img;
         }
         //   this.frontend.img = "./assets/" + this.frontend.img;
         // }
         this.frontend.name = node.name;
         this.backend = [];
+        if (node.data.data.user_id){
+          this.test_user_id = node.data.data.user_id;
+        }else{
+          this.test_user_id = "";
+        }
         for (let server in node.data.data.logs){
           this.backend.push({name:server,logs:node.data.data.logs[server]})
         };
@@ -243,21 +312,30 @@ export class AppComponent implements OnInit {
     this.lineChartOptions = {...this.lineChartOptions};
   }
   clearNodes(){
+    this.test_user_id = "";
     for (let env_data of this.data){
-      for(let test of env_data.data.data){
-        if (test.name.indexOf("Automation Test") >=0 ){
-            for(let job of test.children){
-              for(let feature of job.children){
-                for(let scenario of feature.children){
-                  scenario.data.selected=false;
+      for (let perspective of env_data.perspectives){
+        for(let test of perspective.data.data){
+          if (test.name.indexOf("Automation Test") >=0 || perspective.name == "Pages"){
+              for(let job of test.children){
+                for(let feature of job.children){
+                  for(let scenario of feature.children){
+                    scenario.data.selected=false;
+                  }
+                  if(feature.data){
+                    feature.data.selected=false;
+                  }
                 }
-              }      
+                if (job.data){
+                  job.data.selected=false;
+                }
+              }
+          }else{
+            for (let scenario of test.children){
+              scenario.data.selected=false;
             }
-        }else{
-          for (let scenario of test.children){
-            scenario.data.selected=false;
           }
-        }
+        }  
       }
     }
   }

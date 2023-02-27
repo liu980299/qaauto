@@ -71,6 +71,10 @@ mat-tab-group {
   .selected{
     background-color: aqua;
   }
+
+  .jira{
+    background-color: rgb(126, 247, 115);
+  }
   
   .scenario-text{
     text-align: left;
