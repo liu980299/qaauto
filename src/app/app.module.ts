@@ -10,6 +10,9 @@ import {MatTreeModule} from '@angular/material/tree';
 import {MatIconModule} from '@angular/material/icon';
 import {MatButtonModule} from '@angular/material/button';
 import {MatTableModule} from '@angular/material/table'
+import {MatInputModule} from '@angular/material/input';
+import {MatMenuModule} from '@angular/material/menu';
+import { FormsModule } from '@angular/forms';
 import { NgChartsModule } from 'ng2-charts';
 
 
@@ -24,10 +27,13 @@ import { NgChartsModule } from 'ng2-charts';
     MatTabsModule,
     MatButtonModule,
     MatIconModule,
+    MatInputModule,
     BrowserModule,
     MatTableModule,
     AngularSplitModule,
+    MatMenuModule,
     BrowserAnimationsModule,
+    FormsModule,
     NgChartsModule
   ],
   providers: [DataService

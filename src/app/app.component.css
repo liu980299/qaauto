@@ -108,6 +108,14 @@ mat-tab-group {
     padding-left: 40px;
   }
 
-  img{
+  .menu-item:hover {
+    background-color: aqua;
+  }
+
+  .menu-item{
+    border-bottom:solid ;
+  }
+
+  img mat-form-field{
     width: 100%;
   }

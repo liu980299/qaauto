@@ -5,6 +5,12 @@
       <mat-tab [label]="env.name" *ngFor="let env of data">
         <mat-tab-group class="vertical_tabs">
           <mat-tab [label]="perspective.name" *ngFor="let perspective of env.perspectives" class="vertical_tabs_label">
+            <div style="display: inline-flex;width: 100%;"><input type="search" matInput placeholder="Search" [(ngModel)]="perspective.search" style="width:90%">
+              <button mat-button matSuffix mat-stroked-button aria-label="search" (click)="searchPerspective(perspective)" 
+              [disabled]="perspective.search.length < 7" style="width: 10%">
+                <mat-icon>search</mat-icon>
+            </button>
+          </div>  
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
@@ -30,7 +36,7 @@
                 <ng-container matTreeNodeOutlet></ng-container>
             </div>
           </mat-nested-tree-node>
-        </mat-tree>
+        </mat-tree>        
       </mat-tab>
       </mat-tab-group>
       </mat-tab>
@@ -56,14 +62,22 @@
       <mat-tab-group *ngIf="!is_report && frontend">
         
         <mat-tab label="Steps">          
-          <a *ngIf="frontend.url" [href]="frontend.url" target="_blank"><h3>{{frontend.name}}</h3></a>
+          <div style="display:inline-flex;"><a id="frontend_test_name" *ngIf="frontend.url" [href]="frontend.url" target="_blank">{{frontend.name}}</a>
+            <button mat-raised-button (click)="copyLink()" color="primary" style="margin-left: 10%;">Copy</button>
+            <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;">{{frontend.show_log}}</button>
+            <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Assign to Case</button>
+            <mat-menu #menu="matMenu">
+              <button mat-menu-item *ngFor="let jira of frontend.jiras" class="menu-item">{{jira.id}}:{{jira.summary}}</button>              
+            </mat-menu>
+           </div>
+
           <h3 *ngIf="frontend.jira">Jira:
             <li *ngFor="let jira of frontend.jira.split(',')">
               <a href="{{jira_url}}{{jira}}" target="_blank">{{jira}}</a>
             </li>
           </h3>
-          <b>End Time:{{frontend.end_time}}</b>
-          <div *ngFor="let step of frontend.steps"><p [ngClass] = "{'error':step.result === 'failed'}">{{step.name}}</p>
+          <h3><b>End Time:{{frontend.end_time}}</b></h3>
+          <div *ngFor="let step of frontend.steps"><p [ngClass] = "{'error':step.result === 'failed'}">{{step.name}} &nbsp;&nbsp;&nbsp;({{step.duration}})</p>
           <table *ngIf="step.table" style="border:double"><tr *ngFor="let row of step.table">
             <td *ngFor="let item of row" style="border:groove">{{item}}</td>
           </tr></table></div>          
@@ -78,7 +92,7 @@
         </mat-tab>
       </mat-tab-group>
     </as-split-area>    
-    <as-split-area >     
+    <as-split-area [visible]="frontend.show_log == 'Hide Log'">     
       <div *ngIf="is_report">   
         <table mat-table [dataSource]="datasources" class="mat-elevation-z8">
           <ng-container [matColumnDef]="item" *ngFor="let item of headers">
@@ -90,7 +104,8 @@
         </table>
       </div>
       <mat-tab-group *ngIf="!is_report && backend">
-        <mat-tab *ngFor="let server of backend" [label] = "server.name"><div class="text" *ngFor="let line of server.logs" [ngClass] = "{'error':test_user_id.length > 0 && line.content.indexOf(test_user_id) > 0}">{{line.log_time}}:{{line.content}}<hr></div></mat-tab>
+        <mat-tab *ngFor="let server of backend" [label] = "server.name"><input type="search" matInput placeholder="Search" [(ngModel)]="server.search" (change)="changeSearch()" style="width:100%">
+          <div class="text" *ngFor="let line of server.logs" [ngClass] = "{'error':test_user_id.length > 0 && line.content.indexOf(test_user_id) > 0}"><span *ngIf="line.content.indexOf(server.search)>=0">{{line.log_time}}:{{line.content}}<hr></span></div></mat-tab>
       </mat-tab-group>
     </as-split-area>
     </as-split>
