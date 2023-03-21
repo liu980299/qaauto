@@ -92,7 +92,7 @@
         </mat-tab>
       </mat-tab-group>
     </as-split-area>    
-    <as-split-area [visible]="frontend.show_log == 'Hide Log'">     
+    <as-split-area [visible]="is_report || frontend.show_log == 'Hide Log' ">     
       <div *ngIf="is_report">   
         <table mat-table [dataSource]="datasources" class="mat-elevation-z8">
           <ng-container [matColumnDef]="item" *ngFor="let item of headers">
