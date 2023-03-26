@@ -33,9 +33,11 @@ export class AppComponent implements OnInit {
     responsive: true
   };
   frontend:any;
-  backend:any;
-  is_report = false;
+  backend:any;  
+  jira:any;
+  data_type = "";
   initialized = false;
+  workspace = "Tests";
   summarys : any;
   public lineChartLegend = true;
   selectIndex = 0;
@@ -67,6 +69,12 @@ export class AppComponent implements OnInit {
         var cases_data = {name:"Jiras",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};
         var tests:TestNode[] = [];
         var pages:TestNode[] = [];
+        var cases:TestNode[] = [];
+        for (let jira of data[key].jiras){
+          var case_data:TestNode ={name:jira.id+":"+jira.summary,children:[],data:{scenarios:[],changes:[],jiras:data[key].jiras,type:"jira"}};
+          cases.push(case_data);
+        }
+        cases_data.data.data=cases;
         for (let page in data[key].context){
           var page_data = data[key].context[page];
           if ( page != "scenarios"){
@@ -111,9 +119,17 @@ export class AppComponent implements OnInit {
                     feature_checked_cases++;                    
                   }
                   scenario_data.data.jiras = [];
+                  scenario_data.data.case_list = cases;
                   for (let jira of data[key].jiras){
                     if (jira.id != scenario_data.data.JIRA){
                       scenario_data.data.jiras.push(jira);
+                    }else{
+                      for (let case_item of cases){
+                        if (case_item.name.indexOf(jira.id)>=0){
+                          case_item.data.scenarios.push(scenario_data);
+                          break;
+                        }
+                      }  
                     }
                   }
                 }     
@@ -148,7 +164,7 @@ export class AppComponent implements OnInit {
           this.treeControl.expand(cucumber_data);
         }
         context_data.data.data = pages;
-        var env_data = {name:data[key].Env,perspectives:[cucumber_data,context_data],selected:false,jiras:[]};
+        var env_data = {name:data[key].Env,perspectives:[cucumber_data,context_data,cases_data],selected:false,jiras:[]};
         if (data[key].jiras){
           env_data.jiras = data[key].jiras;
         }
@@ -165,7 +181,24 @@ export class AppComponent implements OnInit {
       this.setReportData();    
      });     
   }
+  
+  assignNode(jira:any){
+    console.log(this.frontend);
+    console.log(jira);
+    var cases = this.frontend.node.data.case_list;
+    var jira_id = jira.id;
+    for(let case_item of cases){
+      if (case_item.name.indexOf(jira_id) >=0){
+        case_item.data.scenarios.push(this.frontend.node)
+        this.frontend.node.data.changed = true;
+      }
+    }
 
+  }
+
+  setWorkspace(workspace:string){
+    this.workspace = workspace;
+  }
   expandNode(){
     var env_index = 0;
     if(this.test_id != "") {
@@ -225,7 +258,7 @@ export class AppComponent implements OnInit {
     node.data.selected=true;
     var test_data = [];
     if (node.data.type && node.data.type == 'report'){
-      this.is_report =true;
+      this.data_type = 'report';      
       this.report_name = node.data.report_name + " - " + node.name;      
       this.lineChartData.labels = [];
       this.lineChartData.datasets = [];
@@ -252,7 +285,14 @@ export class AppComponent implements OnInit {
       console.log(this.chart);      
       this.updateReportChart();
       this.datasources=node.data.data;
-    }else{
+    }else if(node.data.type && node.data.type == 'jira'){
+      this.data_type = 'jira';
+      this.jira = node;
+      console.log(this.jira);
+    }
+    else{
+
+      this.data_type = 'test';
       var id_names= node.data.url.split("/");
       if (window.parent){
         window.parent.location.hash = id_names[id_names.length - 1].split(".")[0];
@@ -333,11 +373,12 @@ export class AppComponent implements OnInit {
     const successful = document.execCommand('copy');
   }
   setData(node:any){
-    if (node.data.selected){
-        this.is_report = false;
+    this.data_type='test';
+    if (node.data.selected){        
         this.frontend= node.data.data;
         this.frontend.jiras = node.data.jiras;
         this.frontend.show_log = "Show Log";
+        this.frontend.node = node;
         if (node.data.JIRA){
           this.frontend.jira = node.data.JIRA;
         }
@@ -377,7 +418,7 @@ export class AppComponent implements OnInit {
     console.log(this.backend);
   }
   setReportData(){
-    this.is_report =true;
+    this.data_type = 'report';
     var summary = this.summarys[this.selectIndex];
     this.report_name = this.summarys[this.selectIndex].name + " test report";
     var failed_data = [];
@@ -433,7 +474,10 @@ export class AppComponent implements OnInit {
                   job.data.selected=false;
                 }
               }
-          }else{
+          }else if (perspective.name != "Tests"){
+            test.data.selected = false;
+          }
+          else{
             for (let scenario of test.children){
               scenario.data.selected=false;
             }

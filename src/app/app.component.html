@@ -1,10 +1,28 @@
-
+<div style="display: inline-flex;"><button mat-icon-button [matMenuTriggerFor]="portal_menu" aria-label="Example icon-button with a menu">
+  <mat-icon>more_vert</mat-icon>
+</button>
+<mat-menu #portal_menu="matMenu">
+  <button mat-menu-item (click)="setWorkspace('Tests')" [disabled]="workspace=='Tests'">
+    <mat-icon>notes</mat-icon>
+    <span>Tests</span>
+  </button>
+  <button mat-menu-item (click)="setWorkspace('Pages')" [disabled]="workspace=='Pages'">
+    <mat-icon>find_in_page</mat-icon>
+    <span>Pages</span>
+  </button>
+  <button mat-menu-item (click)="setWorkspace('Jiras')" [disabled]="workspace=='Jiras'">
+    <mat-icon>assignment_turned_in</mat-icon>
+    <span>Jiras</span>
+  </button>
+</mat-menu>
+<h1 style="padding-top: 10px;"> Portal QA Auto Test Workspace</h1>
+</div>
 <as-split direction="horizontal" [restrictMove]="true" [useTransition]="true" *ngIf="initialized">
   <as-split-area [size]="20">
     <mat-tab-group (selectedIndexChange)="changeEnv($event)" [selectedIndex]="selectIndex">
       <mat-tab [label]="env.name" *ngFor="let env of data">
-        <mat-tab-group class="vertical_tabs">
-          <mat-tab [label]="perspective.name" *ngFor="let perspective of env.perspectives" class="vertical_tabs_label">
+        <div *ngFor="let perspective of env.perspectives">
+          <div [hidden]="perspective.name!=workspace">
             <div style="display: inline-flex;width: 100%;"><input type="search" matInput placeholder="Search" [(ngModel)]="perspective.search" style="width:90%">
               <button mat-button matSuffix mat-stroked-button aria-label="search" (click)="searchPerspective(perspective)" 
               [disabled]="perspective.search.length < 7" style="width: 10%">
@@ -14,7 +32,7 @@
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
-            <button  class="scenario-text" (click)="selectNode(node)"  [class.jira]="node.data.JIRA && !node.data.selected" [class.selected]="node.data.selected">{{node.name}}</button>
+            <button  class="scenario-text" (click)="selectNode(node)"  [class.jira]="node.data.JIRA && !node.data.selected" [class.changed]="node.data.changed && !node.data.selected" [class.selected]="node.data.selected">{{node.name}}</button>
         </mat-tree-node>
           <!-- There is inline padding applied to this node using styles.
             This padding value depends on the mat-icon-button width. -->
@@ -37,8 +55,8 @@
             </div>
           </mat-nested-tree-node>
         </mat-tree>        
-      </mat-tab>
-      </mat-tab-group>
+      </div>
+    </div>
       </mat-tab>
     </mat-tab-group>
 
@@ -46,7 +64,7 @@
   <as-split-area [size]="80">
     <as-split direction="vertical" >
     <as-split-area id="frontend">
-      <div style="display: block;height: 100%;" *ngIf="is_report">
+      <div style="display: block;height: 100%;" *ngIf="data_type=='report'">
         <H2><b>{{report_name}}</b></H2>
         <canvas
           baseChart
@@ -58,8 +76,29 @@
         >
         </canvas>
       </div>
+      <div style="display: block;height: 100%;" *ngIf="data_type=='jira'">
+        <mat-tab-group>
+          <mat-tab>
+        <h3>{{jira.name}}</h3>
+        <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="jira_menu">Assign to Case</button>
+        <mat-menu #jira_menu="matMenu">
+          <div *ngFor="let case of jira.data.jiras">
+          <button mat-menu-item  class="menu-item" *ngIf="(case.id + ':' + case.summary) != jira.name">{{case.id}}:{{case.summary}}</button>              
+          </div>
+        </mat-menu>
+        <div *ngIf="jira.data.scenarios.length > 0">
+          <h4>Existing Scenarios</h4>
+          <mat-checkbox *ngFor="let scenario of jira.data.scenarios">{{scenario.name}}</mat-checkbox>
+        </div>
+        <div *ngIf="jira.data.changes.length > 0">
+          <h4>Newly Added Scenarios</h4>
+          <mat-checkbox *ngFor="let scenario of jira.data.chages">{{scenario.name}}</mat-checkbox>
+        </div>     
+      </mat-tab> 
+        </mat-tab-group>
+      </div>
             
-      <mat-tab-group *ngIf="!is_report && frontend">
+      <mat-tab-group *ngIf="data_type=='test' && frontend">
         
         <mat-tab label="Steps">          
           <div style="display:inline-flex;"><a id="frontend_test_name" *ngIf="frontend.url" [href]="frontend.url" target="_blank">{{frontend.name}}</a>
@@ -67,7 +106,7 @@
             <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;">{{frontend.show_log}}</button>
             <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Assign to Case</button>
             <mat-menu #menu="matMenu">
-              <button mat-menu-item *ngFor="let jira of frontend.jiras" class="menu-item">{{jira.id}}:{{jira.summary}}</button>              
+              <button mat-menu-item *ngFor="let jira of frontend.jiras" class="menu-item" (click)="assignNode(jira)">{{jira.id}}:{{jira.summary}}</button>              
             </mat-menu>
            </div>
 
@@ -92,8 +131,8 @@
         </mat-tab>
       </mat-tab-group>
     </as-split-area>    
-    <as-split-area [visible]="is_report || frontend.show_log == 'Hide Log' ">     
-      <div *ngIf="is_report">   
+    <as-split-area [visible]="data_type=='report' || (data_type=='test' && frontend && frontend.show_log == 'Hide Log') ">     
+      <div *ngIf="data_type=='report'">   
         <table mat-table [dataSource]="datasources" class="mat-elevation-z8">
           <ng-container [matColumnDef]="item" *ngFor="let item of headers">
             <th mat-header-cell *matHeaderCellDef>{{item}}</th>
@@ -103,7 +142,7 @@
           <tr mat-row *matRowDef="let row; columns: headers;"></tr>
         </table>
       </div>
-      <mat-tab-group *ngIf="!is_report && backend">
+      <mat-tab-group *ngIf="data_type=='test' && backend">
         <mat-tab *ngFor="let server of backend" [label] = "server.name"><input type="search" matInput placeholder="Search" [(ngModel)]="server.search" (change)="changeSearch()" style="width:100%">
           <div class="text" *ngFor="let line of server.logs" [ngClass] = "{'error':test_user_id.length > 0 && line.content.indexOf(test_user_id) > 0}"><span *ngIf="line.content.indexOf(server.search)>=0">{{line.log_time}}:{{line.content}}<hr></span></div></mat-tab>
       </mat-tab-group>

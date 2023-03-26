@@ -72,6 +72,11 @@ mat-tab-group {
     background-color: aqua;
   }
 
+  .changed{
+    background-color: rgb(237, 222, 161);
+  }
+
+
   .jira{
     background-color: rgb(126, 247, 115);
   }

@@ -12,6 +12,7 @@ import {MatButtonModule} from '@angular/material/button';
 import {MatTableModule} from '@angular/material/table'
 import {MatInputModule} from '@angular/material/input';
 import {MatMenuModule} from '@angular/material/menu';
+import {MatCheckboxModule} from '@angular/material/checkbox';
 import { FormsModule } from '@angular/forms';
 import { NgChartsModule } from 'ng2-charts';
 
@@ -34,6 +35,7 @@ import { NgChartsModule } from 'ng2-charts';
     MatMenuModule,
     BrowserAnimationsModule,
     FormsModule,
+    MatCheckboxModule,
     NgChartsModule
   ],
   providers: [DataService
