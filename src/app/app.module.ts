@@ -13,7 +13,10 @@ import {MatTableModule} from '@angular/material/table'
 import {MatInputModule} from '@angular/material/input';
 import {MatMenuModule} from '@angular/material/menu';
 import {MatCheckboxModule} from '@angular/material/checkbox';
+import {MatSliderModule} from '@angular/material/slider';
 import { FormsModule } from '@angular/forms';
+import {MatCardModule} from '@angular/material/card';
+import {MatExpansionModule} from '@angular/material/expansion';
 import { NgChartsModule } from 'ng2-charts';
 
 
@@ -35,7 +38,10 @@ import { NgChartsModule } from 'ng2-charts';
     MatMenuModule,
     BrowserAnimationsModule,
     FormsModule,
+    MatCardModule,
     MatCheckboxModule,
+    MatSliderModule,
+    MatExpansionModule,
     NgChartsModule
   ],
   providers: [DataService

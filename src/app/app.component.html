@@ -14,10 +14,15 @@
     <mat-icon>assignment_turned_in</mat-icon>
     <span>Jiras</span>
   </button>
+  <button mat-menu-item (click)="setWorkspace('Timeline')" [disabled]="workspace=='Timeline'">
+    <mat-icon>access_time</mat-icon>
+    <span>Timeline</span>
+  </button>
+
 </mat-menu>
 <h1 style="padding-top: 10px;"> Portal QA Auto Test Workspace</h1>
 </div>
-<as-split direction="horizontal" [restrictMove]="true" [useTransition]="true" *ngIf="initialized">
+<as-split direction="horizontal" [restrictMove]="true" [useTransition]="true" *ngIf="initialized" style="height:90%;border:solid">
   <as-split-area [size]="20">
     <mat-tab-group (selectedIndexChange)="changeEnv($event)" [selectedIndex]="selectIndex">
       <mat-tab [label]="env.name" *ngFor="let env of data">
@@ -32,7 +37,7 @@
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
-            <button  class="scenario-text" (click)="selectNode(node)"  [class.jira]="node.data.JIRA && !node.data.selected" [class.changed]="node.data.changed && !node.data.selected" [class.selected]="node.data.selected">{{node.name}}</button>
+            <button  class="scenario-text" (click)="selectNode(node)"  [class.jira]="node.data && node.data.JIRA && !node.data.selected" [class.changed]="node.data && node.data.changed && !node.data.selected" [class.selected]="node.data && node.data.selected">{{node.name}}</button>
         </mat-tree-node>
           <!-- There is inline padding applied to this node using styles.
             This padding value depends on the mat-icon-button width. -->
@@ -57,9 +62,56 @@
         </mat-tree>        
       </div>
     </div>
+    <div *ngIf="workspace == 'Timeline'">
+      <mat-card>
+        <mat-card-header>
+          <mat-card-title>Time</mat-card-title>
+          <mat-card-subtitle>{{env.timelines.start_time}} - {{env.timelines.end_time}}</mat-card-subtitle>
+        </mat-card-header>
+      </mat-card>
+      <mat-slider            
+      [max]="env.timelines.duration"
+      [min]="0"
+      [step]="60"
+      showTickMarks discrete [displayWith]="formatLabel.bind(this)" style="margin-left: 15%;margin-right: 15%;margin-top:10%;width:70%"
+      >
+    <input matSliderThumb [(ngModel)]="env.timelines.value">
+  </mat-slider>  
+  <mat-card>
+    <mat-card-header>
+      <mat-card-title>Select Context</mat-card-title>
+  </mat-card-header>
+  <mat-card-content>
+    <mat-checkbox *ngFor="let context of env.timelines.context_list" [(ngModel)]="context.checked" (ngModelChange)="updateContextChecked(context)">{{context.name}}</mat-checkbox>
+  </mat-card-content>
+  </mat-card>
+  <div *ngFor="let container of env.timelines.containers">
+  <mat-card *ngIf="container.visible && container.checked" [class.error]="container.scenario.result=='failed'" style="border:solid 1px black;">
+    <mat-card-header>
+      <mat-checkbox [(ngModel)]="container.checked" (ngModelChange)="containerDetail(env.timelines)" > </mat-checkbox><mat-card-title>       
+        {{container.name}}        
+      </mat-card-title>
+      <mat-card-subtitle><h3><b>{{container.context.name}}</b></h3></mat-card-subtitle>
+      <mat-card-subtitle>{{container.scenario.name}}</mat-card-subtitle>
+    </mat-card-header>
+  </mat-card>
+</div>
+<div *ngFor="let container of env.timelines.containers">
+  <mat-card *ngIf="container.visible && !container.checked" [class.error]="container.scenario.result=='failed'" style="border:solid 1px black;">
+    <mat-card-header>
+      <mat-checkbox [(ngModel)]="container.checked" (ngModelChange)="containerDetail(env.timelines)" > </mat-checkbox><mat-card-title>       
+        {{container.name}}        
+      </mat-card-title>
+      <mat-card-subtitle><h3><b>{{container.context.name}}</b></h3></mat-card-subtitle>
+      <mat-card-subtitle>{{container.scenario.name}}</mat-card-subtitle>
+    </mat-card-header>
+  </mat-card>
+</div>
+
+</div>
+
       </mat-tab>
     </mat-tab-group>
-
   </as-split-area>
   <as-split-area [size]="80">
     <as-split direction="vertical" >
@@ -92,17 +144,44 @@
         </div>
         <div *ngIf="jira.data.changes.length > 0">
           <h4>Newly Added Scenarios</h4>
-          <mat-checkbox *ngFor="let scenario of jira.data.chages">{{scenario.name}}</mat-checkbox>
+          <mat-checkbox *ngFor="let scenario of jira.data.changes">{{scenario.name}}</mat-checkbox>
         </div>     
       </mat-tab> 
         </mat-tab-group>
       </div>
+      <div style="display: block;height: 100%;" *ngIf="data_type=='timeline'">
+        <mat-accordion multi *ngFor="let container of data[selectIndex].timelines.containers">
+          
+          <mat-expansion-panel *ngIf="container.checked && container.visible">
+            <mat-expansion-panel-header>
+              <mat-panel-title>
+                {{container.name}} -- {{container.scenario.name}}
+              </mat-panel-title>
+            </mat-expansion-panel-header>
             
+            <mat-accordion multi="false" >      
+              <mat-expansion-panel *ngFor="let context of container.scenario.contexts">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    {{context.name}}
+                  </mat-panel-title>
+                </mat-expansion-panel-header>
+                
+              <p *ngFor="let step of context.steps" [class.selected]="step > data[selectIndex].timelines.current_time">{{step}}</p>
+            </mat-expansion-panel>
+            </mat-accordion>
+          
+        </mat-expansion-panel>
+
+        </mat-accordion>
+        
+      </div>            
       <mat-tab-group *ngIf="data_type=='test' && frontend">
         
         <mat-tab label="Steps">          
           <div style="display:inline-flex;"><a id="frontend_test_name" *ngIf="frontend.url" [href]="frontend.url" target="_blank">{{frontend.name}}</a>
             <button mat-raised-button (click)="copyLink()" color="primary" style="margin-left: 10%;">Copy</button>
+            <button mat-raised-button (click)="gotoError()" color="primary" style="margin-left: 10px;">Error Step</button>
             <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;">{{frontend.show_log}}</button>
             <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Assign to Case</button>
             <mat-menu #menu="matMenu">
@@ -116,14 +195,14 @@
             </li>
           </h3>
           <h3><b>End Time:{{frontend.end_time}}</b></h3>
-          <div *ngFor="let step of frontend.steps"><p [ngClass] = "{'error':step.result === 'failed'}">{{step.name}} &nbsp;&nbsp;&nbsp;({{step.duration}})</p>
+          <div *ngFor="let step of frontend.steps"><p [attr.id]="step.result === 'failed'?'error_step_id':null" [ngClass] = "{'error':step.result === 'failed'}">{{step.name}} &nbsp;&nbsp;&nbsp;({{step.duration}})</p>
           <table *ngIf="step.table" style="border:double"><tr *ngFor="let row of step.table">
             <td *ngFor="let item of row" style="border:groove">{{item}}</td>
           </tr></table></div>          
         </mat-tab>
         <mat-tab label="Error Message"><pre class="text">{{frontend.error_message}}</pre></mat-tab>
           
-        <mat-tab label="Screenshot"><img [src]="frontend.img" *ngIf="frontend.img"></mat-tab>
+        <mat-tab label="Screenshot"><img [src]="frontend.img" *ngIf="frontend.img" style="height: 100%; width: 100%;"></mat-tab>
       
         <mat-tab label="Console Log"><div *ngIf="frontend.console_log"><b>{{frontend.console_log[0]}}</b>
           <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre>

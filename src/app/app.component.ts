@@ -164,9 +164,41 @@ export class AppComponent implements OnInit {
           this.treeControl.expand(cucumber_data);
         }
         context_data.data.data = pages;
-        var env_data = {name:data[key].Env,perspectives:[cucumber_data,context_data,cases_data],selected:false,jiras:[]};
+        var env_data = {name:data[key].Env,perspectives:[cucumber_data,context_data,cases_data],selected:false,jiras:[],
+            timelines:{containers:[],start_time:"",end_time:"",duration:0,value:0,headers:['name','start_time','end_time','total','failed'],data_source:[]}};
         if (data[key].jiras){
           env_data.jiras = data[key].jiras;
+        }
+        if (data[key].timeline){
+          var timelines:any = []
+          var start_time = "";
+          var end_time = "";
+          for (let container in data[key].timeline){
+            var timeline = data[key].timeline[container];
+            data[key].timeline[container].total = data[key].timeline[container].scenarios.length;
+            data[key].timeline[container].failed = data[key].timeline[container].scenarios.filter((ele:any)=>ele.result=='failed').length;
+            if (start_time == ""){
+              start_time = data[key].timeline[container].start_time;
+            }else{
+              if (start_time > data[key].timeline[container].start_time){
+                start_time = data[key].timeline[container].start_time
+              }
+            }
+            if (end_time == ""){
+              end_time = data[key].timeline[container].end_time;
+            }else{
+              if (end_time < data[key].timeline[container].end_time){
+                end_time = data[key].timeline[container].end_time;
+              }
+            }            
+            timeline.name = container;
+            timelines.push(timeline);
+          }
+          env_data.timelines.duration = ((new Date(end_time)).getTime() - (new Date(start_time)).getTime())/1000;
+          env_data.timelines.containers = timelines;
+          env_data.timelines.start_time = start_time;
+          env_data.timelines.end_time = end_time;                              
+          env_data.timelines.containers.sort((a:any,b:any)=>((a.end_time > b.end_time)?1:((b.end_time > a.end_time)?-1:0)))
         }
         this.data.push(env_data); 
         var summary_data = {name:data[key].Env,data:data[key].summary};
@@ -181,7 +213,12 @@ export class AppComponent implements OnInit {
       this.setReportData();    
      });     
   }
-  
+  updateContextChecked(context:any){    
+    for(let container of  context.containers){
+      container.checked = context.checked;
+    }
+    this.containerDetail(this.data[this.selectIndex].timelines);
+  }
   assignNode(jira:any){
     console.log(this.frontend);
     console.log(jira);
@@ -189,15 +226,100 @@ export class AppComponent implements OnInit {
     var jira_id = jira.id;
     for(let case_item of cases){
       if (case_item.name.indexOf(jira_id) >=0){
-        case_item.data.scenarios.push(this.frontend.node)
+        case_item.data.changes.push(this.frontend.node)
         this.frontend.node.data.changed = true;
       }
     }
 
   }
 
+  setTimelineValue(value:number){
+    this.data[this.selectIndex].timelines.value = value;
+  }
+  formatLabel(value: number): string {
+    var start_time = new Date(this.data[this.selectIndex].timelines.start_time+".000+00:00");
+    start_time.setTime(start_time.getTime() + value * 1000);
+    var current_time = start_time.toISOString().replace('T', ' ').replace('Z','');
+    var timelines = this.data[this.selectIndex].timelines;
+    var contexts:any = {}
+    timelines.context_list=[];
+    for(let container of timelines.containers){
+      container.visible = false;
+      if(container.start_time <= current_time && container.end_time >= current_time){
+        container.visible = true;
+        for (let scenario of container.scenarios){
+          if(scenario.start_time <= current_time && scenario.end_time >= current_time){
+            container.scenario = scenario;
+            for(let context of scenario.contexts){
+              if(context.start_time <= current_time && context.end_time >= current_time){
+                container.context = context;
+                if (!(container.context.name in contexts)){
+                  var context_item = {"name":container.context.name,"checked":false,containers:[container]};
+                  contexts[container.context.name] = context_item;
+                  timelines.context_list.push(context_item);
+                }else{
+                  contexts[container.context.name].containers.push(container);
+                }
+                break;
+              }
+            }
+            break;
+          }
+        }  
+      }
+    }
+    this.data[this.selectIndex].timelines.current_time = current_time;
+    return current_time;
+  }
+  containerDetail(timelines:any){
+    console.log(timelines);
+    if(timelines.containers.filter((ele:any)=>ele.checked).length > 0){
+      this.data_type='timeline';
+    }else{
+      this.data_type='report';
+    }
+  }
+  gotoError(){
+    document.getElementById("error_step_id")?.scrollIntoView(false);
+  }
+
+  setTimeline(){
+    var env_data=this.data[this.selectIndex];
+    this.data_type = "report";
+    this.report_name = "containers running end time chart";      
+    this.lineChartData.labels = [];
+    this.lineChartData.datasets = [];
+    this.headers = env_data.timelines.headers;      
+    var color = 'black';
+    var end_times = [];
+    var start_time = new Date(env_data.timelines.start_time);
+    for (let item of env_data.timelines.containers){
+      this.lineChartData.labels.push(item.name);
+      if (item.color){
+        color = item.color;
+      }
+      var end_time = new Date(item.end_time);
+      var duration = (end_time.getTime() - start_time.getTime())/1000;
+      end_times.push(duration);
+    }
+    var dataset = {data:end_times,
+      label: "End Time",
+      fill: false,
+      tension: 0,
+      borderColor: color,
+      backgroundColor: 'rgba(255,0,0,0.3)'
+    }
+    this.lineChartData.datasets=[dataset]
+    console.log(this.chart);      
+    this.updateReportChart();
+    this.datasources=env_data.timelines.containers;
+
+  }
   setWorkspace(workspace:string){
     this.workspace = workspace;
+    if(workspace == 'Timeline'){
+      this.setTimeline();
+    }
   }
   expandNode(){
     var env_index = 0;
@@ -412,6 +534,9 @@ export class AppComponent implements OnInit {
   changeEnv(_event:any){
     this.selectIndex = _event;
     this.setReportData();
+    if(this.workspace == 'Timeline'){
+      this.setTimeline();
+    }
     
   }
   changeSearch(){
