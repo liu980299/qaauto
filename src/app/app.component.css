@@ -6,11 +6,29 @@ mat-tab-group {
   height: 100%;
 }
 
+.button {
+  font: bold 16px Arial;
+  text-decoration: none;
+  background-color: #EEEEEE;
+  color: #333333;
+  padding: 2px 6px 2px 6px;
+  border-top: 1px solid #CCCCCC;
+  border-right: 1px solid #333333;
+  border-bottom: 1px solid #333333;
+  border-left: 1px solid #CCCCCC;
+}
+
 .vertical_tabs{
     flex-direction: row;
     
     
 } 
+
+.removed{
+  text-decoration: line-through;
+  font-weight: bold;
+  font-style: italic;
+}
 
 :host /deep/ .vertical_tabs .mdc-tab{
   min-width: 35px;
@@ -60,6 +78,15 @@ mat-tab-group {
     position: -webkit-sticky; /* macOS/iOS Safari */    
 }
 
+:host /deep/ .mat-badge-content{
+  top:0px !important; 
+}
+
+.inline{
+  display: inline-flex;
+  width: 100%;
+}
+
   :host /deep/ mat-tab-header {
     top: 0;
     z-index: 1000; 
@@ -72,13 +99,18 @@ mat-tab-group {
     background-color: aqua;
   }
 
-  .changed{
-    background-color: rgb(237, 222, 161);
+  .warn, .warn:hover{
+    background-color: rgb(240, 136, 18)!important;
   }
 
 
-  .jira{
-    background-color: rgb(126, 247, 115);
+  .changed, .changed:hover{
+    background-color: rgb(237, 222, 161)!important;
+  }
+
+
+  .jira, .jira:hover{
+    background-color: rgb(126, 247, 115)!important;
   }
   
   .scenario-text{

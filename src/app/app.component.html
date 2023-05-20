@@ -1,4 +1,4 @@
-<div style="display: inline-flex;"><button mat-icon-button [matMenuTriggerFor]="portal_menu" aria-label="Example icon-button with a menu">
+<div style="display:flex; justify-content: space-between;"><button mat-icon-button [matMenuTriggerFor]="portal_menu" [matBadge]="jiraChanges" [matBadgeHidden]="jiraChanges==0" matBadgeColor="accent"  matBadgeSize="small" >
   <mat-icon>more_vert</mat-icon>
 </button>
 <mat-menu #portal_menu="matMenu">
@@ -10,34 +10,40 @@
     <mat-icon>find_in_page</mat-icon>
     <span>Pages</span>
   </button>
-  <button mat-menu-item (click)="setWorkspace('Jiras')" [disabled]="workspace=='Jiras'">
-    <mat-icon>assignment_turned_in</mat-icon>
+  <button mat-menu-item (click)="setWorkspace('Jiras')" [disabled]="workspace=='Jiras'" >
+    <mat-icon [matBadge]="jiraChanges" [matBadgeHidden]="jiraChanges==0" matBadgeColor="accent"  matBadgeSize="small" >assignment_turned_in</mat-icon>
     <span>Jiras</span>
   </button>
   <button mat-menu-item (click)="setWorkspace('Timeline')" [disabled]="workspace=='Timeline'">
     <mat-icon>access_time</mat-icon>
     <span>Timeline</span>
   </button>
-
 </mat-menu>
-<h1 style="padding-top: 10px;"> Portal QA Auto Test Workspace</h1>
+<h1 style="padding-top: 10px;" > Portal QA Auto Test Workspace</h1>
+<h3>welcome!<b *ngIf="user && user.username">{{user.username}}</b></h3>
 </div>
+
 <as-split direction="horizontal" [restrictMove]="true" [useTransition]="true" *ngIf="initialized" style="height:90%;border:solid">
   <as-split-area [size]="20">
     <mat-tab-group (selectedIndexChange)="changeEnv($event)" [selectedIndex]="selectIndex">
       <mat-tab [label]="env.name" *ngFor="let env of data">
         <div *ngFor="let perspective of env.perspectives">
           <div [hidden]="perspective.name!=workspace">
-            <div style="display: inline-flex;width: 100%;"><input type="search" matInput placeholder="Search" [(ngModel)]="perspective.search" style="width:90%">
+            <div class="inline" *ngIf="perspective.name!='Jiras'"><input type="search" matInput placeholder="Search" [(ngModel)]="perspective.search" style="width:90%">
               <button mat-button matSuffix mat-stroked-button aria-label="search" (click)="searchPerspective(perspective)" 
               [disabled]="perspective.search.length < 7" style="width: 10%">
                 <mat-icon>search</mat-icon>
             </button>
           </div>  
+          <div *ngIf="perspective.name == 'Jiras' && jira"><button mat-raised-button color="primary" (click)="enableJiraSummary()">Summary</button></div>
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
-          <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
-            <button  class="scenario-text" (click)="selectNode(node)"  [class.jira]="node.data && node.data.JIRA && !node.data.selected" [class.changed]="node.data && node.data.changed && !node.data.selected" [class.selected]="node.data && node.data.selected">{{node.name}}</button>
+          <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>            
+            <button  class="scenario-text" (click)="selectNode(node)"  
+            [class.jira]="node.data && node.data.JIRA && !node.data.selected"
+            [class.changed]="node.data && node.data.changes && node.data.removed && node.data.changes.length + node.data.removed.length > 0 && !node.data.selected" 
+            [class.selected]="node.data && node.data.selected"            
+            >{{node.name}}<span *ngIf="perspective.name=='Jiras'" [matBadge]="node.data.changes.length+node.data.removed.length" [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small"></span></button>
         </mat-tree-node>
           <!-- There is inline padding applied to this node using styles.
             This padding value depends on the mat-icon-button width. -->
@@ -69,13 +75,29 @@
           <mat-card-subtitle>{{env.timelines.start_time}} - {{env.timelines.end_time}}</mat-card-subtitle>
         </mat-card-header>
       </mat-card>
+      <mat-form-field style="width:100%">
+        <mat-label>Time</mat-label>
+        <div class="inline">
+        <input type="text" matInput [(ngModel)]= "env.timelines.current_time" [max]="env.timelines.end_time" [formControl]="testTimeControl" [errorStateMatcher]="matcher"
+               placeholder="YYYY-MM-DD HH:MM:SS" style="width: 90%;">    
+               <button mat-button matSuffix mat-stroked-button aria-label="search" (click)="setCurrentTime()" 
+                style="width: 10%">
+                 <mat-icon>search</mat-icon>
+             </button>
+     
+        </div>
+        <mat-error *ngIf="testTimeControl.hasError('format')">
+          Please enter a time as YYYY-MM-DD HH:MM:SS
+        </mat-error>
+      </mat-form-field>
+      
       <mat-slider            
       [max]="env.timelines.duration"
       [min]="0"
       [step]="60"
-      showTickMarks discrete [displayWith]="formatLabel.bind(this)" style="margin-left: 15%;margin-right: 15%;margin-top:10%;width:70%"
+      showTickMarks discrete  style="margin-left: 15%;margin-right: 15%;margin-top:10%;width:70%"
       >
-    <input matSliderThumb [(ngModel)]="env.timelines.value">
+    <input matSliderThumb [(ngModel)]="env.timelines.value" (change)="setTimelineValue()">
   </mat-slider>  
   <mat-card>
     <mat-card-header>
@@ -129,25 +151,85 @@
         </canvas>
       </div>
       <div style="display: block;height: 100%;" *ngIf="data_type=='jira'">
+        <div *ngIf="jira">
         <mat-tab-group>
           <mat-tab>
         <h3>{{jira.name}}</h3>
-        <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="jira_menu">Assign to Case</button>
+        <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="jira_menu" [disabled]="jira.data.checked.length==0">Assign to Case</button>
         <mat-menu #jira_menu="matMenu">
           <div *ngFor="let case of jira.data.jiras">
-          <button mat-menu-item  class="menu-item" *ngIf="(case.id + ':' + case.summary) != jira.name">{{case.id}}:{{case.summary}}</button>              
+          <button mat-menu-item  class="menu-item" *ngIf="(case.id + ':' + case.summary) != jira.name" (click)="moveScenarios(jira, case)">{{case.id}}:{{case.summary}}</button>              
           </div>
         </mat-menu>
-        <div *ngIf="jira.data.scenarios.length > 0">
+        <button mat-raised-button  color="primary" style="margin-left: 10px;" [disabled]="jira.data.checked.length==0" (click)="removeScenarios(jira)">Remove from Case</button>
+        <div *ngIf="jira.data.scenarios.length > jira.data.removed.length">
           <h4>Existing Scenarios</h4>
-          <mat-checkbox *ngFor="let scenario of jira.data.scenarios">{{scenario.name}}</mat-checkbox>
+          <div *ngFor="let scenario of jira.data.scenarios">
+          <mat-checkbox  *ngIf="!isRemoved(jira,scenario.name)" (change)="checkScenario(jira,scenario)" [checked]="jira.data.checked.indexOf(scenario.name) >= 0">{{scenario.name}}</mat-checkbox>
+          </div>
         </div>
         <div *ngIf="jira.data.changes.length > 0">
           <h4>Newly Added Scenarios</h4>
-          <mat-checkbox *ngFor="let scenario of jira.data.changes">{{scenario.name}}</mat-checkbox>
+          <mat-checkbox *ngFor="let scenario of jira.data.changes" (change)="checkScenario(jira,scenario)" [checked]="jira.data.checked.indexOf(scenario.name) >= 0">{{scenario.name}}</mat-checkbox>
+        </div>   
+        <div *ngIf="jira.data.removed.length > 0">
+          <h4>Removed Scenarios</h4>
+          <li *ngFor="let scenario of jira.data.removed">{{scenario}}</li>
         </div>     
+  
       </mat-tab> 
         </mat-tab-group>
+        </div>
+        <div *ngIf="!jira">
+          <h2>Summary</h2>
+          <h3>Total {{data[selectIndex].jiras.length}} still open Jiras found by automation</h3>
+          <h3>Total {{data[selectIndex].checked_cases}} scenarios have been checked</h3>
+          <h3 *ngIf="data[selectIndex].passed_jiras">Total {{data[selectIndex].passed_jiras}} jiras have been passed the auto test and probably could be marked as verified</h3>
+          <h3 *ngIf="data[selectIndex].moved_jiras">The tests for {{data[selectIndex].moved_jiras}} jiras have been moved out of daily auto test</h3>
+          <h3 *ngIf="changedJiras>0">Total {{changedJiras}} Jiras has been changed</h3>
+          <button mat-raised-button [disabled] = "jiraChanges==0" color="primary" (click)="submitChanges()">Submit</button>
+          <table mat-table [dataSource]="data[selectIndex].perspectives[2].data._data._value" class="mat-elevation-z8">
+            <ng-container matColumnDef="id">
+              <th mat-header-cell *matHeaderCellDef>JIRA ID</th>
+              
+              <td mat-cell *matCellDef="let element"><a href="{{jira_url}}{{element.data.id}}" target="_blank">{{element.data.id}}</a> </td>            
+            </ng-container>
+            <ng-container matColumnDef="summary">
+              <th mat-header-cell *matHeaderCellDef>SUMMARY</th>
+              <td mat-cell *matCellDef="let element"> {{element.name.split(":")[1]}} </td>            
+            </ng-container>
+            <ng-container matColumnDef="scenarios">
+              <th mat-header-cell *matHeaderCellDef>SCENARIOS</th>
+              <td mat-cell *matCellDef="let element"> <p *ngFor="let scenario_item of element.data.scenarios" [class.removed]="element.data.removed.indexOf(scenario_item.name)>=0">{{scenario_item.name}}</p> 
+                <div *ngIf="element.data.changes.length > 0"><b>Newly Added</b>
+                  <p *ngFor="let scenario of element.data.changes"><b>{{scenario.name}}</b></p>            
+                  </div>
+              </td>            
+            </ng-container>
+            <ng-container matColumnDef="comment">
+              <th mat-header-cell *matHeaderCellDef>COMMENTS</th>
+              <td mat-cell *matCellDef="let element"> <div *ngIf="element.data.scenarios.length == 0 && !element.data.passed_tests">
+              <p >
+                {{element.data.scenario_text}} not in daily auto test. 
+              </p>
+             <b>please check whether they are moved out of daily auto test</b>
+            </div>
+              <div *ngIf="element.data.passed_tests">
+                <ul>The below tests were passed in auto daily tests
+                <li *ngFor="let pass_test of element.data.passed_tests"><a  [href]="pass_test.url" target="_blank">{{pass_test.name}}</a></li>
+                </ul>
+                <b *ngIf="element.data.scenarios.length == 0"> Please check whether the ticket could be marked as verified</b>
+                </div>
+              </td>            
+            </ng-container>
+
+
+            <tr mat-header-row *matHeaderRowDef="jira_headers"></tr>
+            <tr mat-row *matRowDef="let row; columns: jira_headers;" [class.changed]="row.data.changes.length + row.data.removed.length>0" [class.warn]="row.data.scenarios.length == 0 && !row.data.passed_tests" 
+              [class.jira]="row.data.scenarios.length == 0 && row.data.passed_tests"></tr>
+          </table>
+  
+        </div>
       </div>
       <div style="display: block;height: 100%;" *ngIf="data_type=='timeline'">
         <mat-accordion multi *ngFor="let container of data[selectIndex].timelines.containers">
@@ -160,7 +242,7 @@
             </mat-expansion-panel-header>
             
             <mat-accordion multi="false" >      
-              <mat-expansion-panel *ngFor="let context of container.scenario.contexts">
+              <mat-expansion-panel *ngFor="let context of container.scenario.contexts" [class.selected]="context.start_time > data[selectIndex].timelines.current_time">
                 <mat-expansion-panel-header>
                   <mat-panel-title>
                     {{context.name}}
@@ -185,15 +267,30 @@
             <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;">{{frontend.show_log}}</button>
             <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Assign to Case</button>
             <mat-menu #menu="matMenu">
-              <button mat-menu-item *ngFor="let jira of frontend.jiras" class="menu-item" (click)="assignNode(jira)">{{jira.id}}:{{jira.summary}}</button>              
+              <div *ngFor="let jira of data[selectIndex].jiras" >
+              <button mat-menu-item (click)="assignNode(jira)" class="menu-item" *ngIf="frontend.node.data.jiras.indexOf(jira.id)<0">{{jira.id}}:{{jira.summary}}</button>              
+              </div>
             </mat-menu>
-           </div>
-
-          <h3 *ngIf="frontend.jira">Jira:
-            <li *ngFor="let jira of frontend.jira.split(',')">
+            
+           </div>           
+           <h3><a [href]="frontend.screenshots_url" target="_blank" *ngIf="frontend.screenshots_url" class="button">Download Screenshots Archive</a></h3> 
+           <h3 *ngIf="frontend.node.data.last_success_test">
+              <a [href]="frontend.node.data.last_success_test.url" target="_blank">The last successful test was performed {{frontend.node.data.last_success_test.test_time}}
+                 with Portal verion {{frontend.node.data.last_success_test.version}}</a>
+              </h3>
+          <h3 *ngIf="frontend.node.data.jiras.length - frontend.node.data.removed.length > 0">Jira:
+            <div *ngFor="let jira of frontend.node.data.jiras">
+            <li *ngIf="frontend.node.data.removed.indexOf(jira) < 0">
+              <a href="{{jira_url}}{{jira}}" target="_blank">{{jira}}</a>
+            </li>
+            </div>
+          </h3>
+          <h3 *ngIf="frontend.node.data.changes.length > 0">New Added Jira:
+            <li *ngFor="let jira of frontend.node.data.changes">
               <a href="{{jira_url}}{{jira}}" target="_blank">{{jira}}</a>
             </li>
           </h3>
+
           <h3><b>End Time:{{frontend.end_time}}</b></h3>
           <div *ngFor="let step of frontend.steps"><p [attr.id]="step.result === 'failed'?'error_step_id':null" [ngClass] = "{'error':step.result === 'failed'}">{{step.name}} &nbsp;&nbsp;&nbsp;({{step.duration}})</p>
           <table *ngIf="step.table" style="border:double"><tr *ngFor="let row of step.table">
