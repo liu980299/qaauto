@@ -13,10 +13,12 @@ import {MatTableModule} from '@angular/material/table'
 import {MatInputModule} from '@angular/material/input';
 import {MatMenuModule} from '@angular/material/menu';
 import {MatCheckboxModule} from '@angular/material/checkbox';
+import {MatSelectModule} from '@angular/material/select';
 import {MatSliderModule} from '@angular/material/slider';
 import {MatCardModule} from '@angular/material/card';
 import {MatExpansionModule} from '@angular/material/expansion';
 import {MatBadgeModule} from '@angular/material/badge';
+import {MatSortModule} from '@angular/material/sort';
 import { NgChartsModule } from 'ng2-charts';
 import {FormsModule, ReactiveFormsModule} from '@angular/forms';
 
@@ -45,6 +47,8 @@ import {FormsModule, ReactiveFormsModule} from '@angular/forms';
     MatSliderModule,
     MatExpansionModule,
     MatBadgeModule,
+    MatSelectModule,
+    MatSortModule,
     NgChartsModule
     
   ],
