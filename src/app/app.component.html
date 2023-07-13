@@ -47,6 +47,7 @@
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>            
             <button  class="scenario-text" (click)="selectNode(node)"  
+            [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && !node.data.is_new"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
             [class.changed]="node.data && node.data.changes && node.data.removed && node.data.changes.length + node.data.removed.length > 0 && !node.data.selected" 
             [class.selected]="node.data && node.data.selected"            
@@ -107,12 +108,32 @@
       >
     <input matSliderThumb [(ngModel)]="env.timelines.value" (change)="setTimelineValue()">
   </mat-slider>  
+  <mat-form-field style="width:100%">
+    <mat-label>Select Test Accounts</mat-label>
+    <mat-chip-grid #chipGrid aria-label="Account selection">
+      <mat-chip-row *ngFor="let account of env.timelines.selected_accounts" (removed)="removeAccount(account)">
+        {{account}}
+        <button matChipRemove [attr.aria-label]="'remove ' + account">
+          <mat-icon>cancel</mat-icon>
+        </button>
+      </mat-chip-row>
+    </mat-chip-grid>
+    <input placeholder="Add test account..." #accountInput [formControl]="accountCtrl"
+      [matChipInputFor]="chipGrid" [matAutocomplete]="auto"      
+      />
+    <mat-autocomplete #auto="matAutocomplete" (optionSelected)="selectAccount($event)">
+      <mat-option *ngFor="let account of filteredAccounts |async" [value]="account">
+        {{account}}
+      </mat-option>
+    </mat-autocomplete>
+  </mat-form-field>
+
   <mat-card>
     <mat-card-header>
       <mat-card-title>Select Context</mat-card-title>
   </mat-card-header>
   <mat-card-content>
-    <mat-checkbox *ngFor="let context of env.timelines.context_list" [(ngModel)]="context.checked" (ngModelChange)="updateContextChecked(context)">{{context.name}}</mat-checkbox>
+    <mat-checkbox *ngFor="let context of env.timelines.context_list" [(ngModel)]="context.checked" (ngModelChange)="updateContextChecked(context)" [indeterminate]="context.some">{{context.name}}</mat-checkbox>
   </mat-card-content>
   </mat-card>
   <div *ngFor="let container of env.timelines.containers">
@@ -122,7 +143,7 @@
         {{container.name}}        
       </mat-card-title>
       <mat-card-subtitle><h3><b>{{container.context.name}}</b></h3></mat-card-subtitle>
-      <mat-card-subtitle>{{container.scenario.name}}</mat-card-subtitle>
+      <mat-card-subtitle><span *ngIf="container.scenario.test_users"><p *ngFor="let user of container.scenario.test_users"><b>{{user}}</b></p></span>{{container.scenario.name}}</mat-card-subtitle>
     </mat-card-header>
   </mat-card>
 </div>
@@ -133,7 +154,7 @@
         {{container.name}}        
       </mat-card-title>
       <mat-card-subtitle><h3><b>{{container.context.name}}</b></h3></mat-card-subtitle>
-      <mat-card-subtitle>{{container.scenario.name}}</mat-card-subtitle>
+      <mat-card-subtitle><span *ngIf="container.scenario.test_users"><p *ngFor="let user of container.scenario.test_users"><b>{{user}}</b></p></span><p>{{container.scenario.name}}</p></mat-card-subtitle>
     </mat-card-header>
   </mat-card>
 </div>
@@ -184,9 +205,11 @@
               </ng-container>
               <ng-container matColumnDef="comment">
                 <th mat-header-cell *matHeaderCellDef>COMMENTS</th>
-                <td mat-cell *matCellDef="let element"> <div *ngIf="element.comments">
+                <td mat-cell *matCellDef="let element"> 
+                <p *ngIf="element.new_comment">{{element.new_comment.user.username}}:{{element.new_comment.content}}</p>  
+                <div *ngIf="element.comments">
                 <p *ngFor="let comment of element.comments">
-                 {{comment}}
+                 {{comment.user.username}}:{{comment.content}}
                 </p>               
                 </div>
                 </td>            
@@ -401,18 +424,18 @@
 
           <mat-form-field style="display: block;">
             <mat-label>Add Comments</mat-label>
-            <textarea matInput [(ngModel)]="frontend.node.data.temp_comment.content" [required]="frontend.node.data.temp_comment.is_monitor"></textarea>
+            <textarea matInput [(ngModel)]="frontend.node.data.temp_comment.content" [required]="frontend.node.data.temp_comment.is_monitored"></textarea>
           </mat-form-field>            
-          <mat-checkbox [(ngModel)]="frontend.node.data.temp_comment.is_monitor"><b>Put in Monitor</b></mat-checkbox>
+          <mat-checkbox [(ngModel)]="frontend.node.data.temp_comment.is_monitored"><b>Put in Monitor</b></mat-checkbox>
           <button mat-raised-button color="primary" style="margin-left: 10%;" (click)="addComment()" [disabled]="!frontend.node.data.temp_comment.content||frontend.node.data.temp_comment.content < 2
           ||(frontend.node.data.new_comment&&frontend.node.data.new_comment.content==frontend.node.data.temp_comment.content&&
-          frontend.node.data.new_comment.is_monitor==frontend.node.data.temp_comment.is_monitor)">Save</button>
+          frontend.node.data.new_comment.is_monitored==frontend.node.data.temp_comment.is_monitored)">Save</button>
           <button mat-raised-button color="primary" style="margin-left: 10px;" (click)="removeComment()" [disabled]="!frontend.node.data.new_comment">Delete</button>
 
 
-          <h3 [ngClass]="{'warn':!frontend.node.data.assigned,'jira':frontend.node.data.assigned}"><span *ngIf="frontend.node.data.owner"> Suggested owner : {{frontend.owner.user}} ( feature : {{frontend.node.data.feature_file}}). </span>
-            <span *ngIf="frontend.node.data.assigned"> Currently it is assigned to {{frontend.node.data.assigned}} </span>
-            <span *ngIf="!frontend.node.data.assigned"> Currently it is not assigned !</span>            
+          <h3 [ngClass]="{'warn':!frontend.node.data.assigned||frontend.node.data.assigned=='Unsigned','jira':frontend.node.data.assigned&&frontend.node.data.assigned!='Unsigned'}"><span *ngIf="frontend.node.data.owner"> Suggested owner : {{frontend.owner.user}} ( feature : {{frontend.node.data.feature_file}}). </span>
+            <span *ngIf="frontend.node.data.assigned && frontend.node.data.assigned!='Unsigned'"> Currently it is assigned to {{frontend.node.data.assigned}} </span>
+            <span *ngIf="!frontend.node.data.assigned||frontend.node.data.assigned=='Unsigned'"> Currently it is not assigned !</span>            
             <button mat-raised-button color="primary" style="margin-left: 10%;"  [matMenuTriggerFor]="ownerMenu">Assign Task</button></h3>
             <mat-menu #ownerMenu="matMenu">
               <div *ngFor="let owner of owner_list" >
@@ -433,7 +456,7 @@
         </mat-tab>
         <mat-tab label="Error Message"><pre class="text">{{frontend.error_message}}</pre></mat-tab>
           
-        <mat-tab label="Screenshot"><img [src]="frontend.img" *ngIf="frontend.img" style="height: 100%; width: 100%;"></mat-tab>
+        <mat-tab label="Screenshot"><a [href]="frontend.img" *ngIf="frontend.img" ref="images" target="_blank"><img [src]="frontend.img"  style="height: 100%; width: 100%;"></a></mat-tab>
       
         <mat-tab label="Console Log"><div *ngIf="frontend.console_log"><b>{{frontend.console_log[0]}}</b>
           <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre>
@@ -461,4 +484,4 @@
   </as-split-area>
 
 </as-split>
-<button mat-raised-button [disabled] = "jiraChanges+taskChanges==0" color="primary" (click)="submitChanges()">Submit</button><span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span><span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>
+<button mat-raised-button [disabled] = "jiraChanges+taskChanges==0 || is_processing" color="primary" (click)="submitChanges()">Submit</button><span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span><span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>

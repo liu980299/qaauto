@@ -22,7 +22,12 @@ export class DataService {
         return this.http.get(report_url + "./analysis.json");
     }
     public getData(json_url:string): Observable<any>{
-        return this.http.get(report_url + json_url);
+        if (json_url.indexOf("http")>=0){
+            return this.http.get(json_url);
+        }else{
+            return this.http.get(report_url + json_url);
+        }
+        
 
     }
 }

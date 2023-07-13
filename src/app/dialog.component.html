@@ -1,0 +1,13 @@
+<h2 mat-dialog-title>Changes for New Updates</h2>
+<mat-dialog-content class="mat-typography">
+    <div *ngFor="let env_changes of data">
+        <H3>{{env_changes.name}}</H3>
+        <p *ngFor="let change of env_changes.changes">
+            {{change.name}} : {{change.src}} -> {{change.dst}}
+        </p>
+    </div>
+    <mat-dialog-actions align="end">
+        <button mat-button mat-dialog-close>Cancel</button>
+        <button mat-button [mat-dialog-close]="true" cdkFocusInitial>OK</button>
+      </mat-dialog-actions>    
+</mat-dialog-content>

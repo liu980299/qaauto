@@ -1,14 +1,18 @@
-import { ApplicationInitStatus, APP_INITIALIZER, Component, Inject, OnInit,ViewChild,Renderer2   } from '@angular/core';
+import { ApplicationInitStatus, APP_INITIALIZER, Component, Inject, OnInit,ViewChild,Renderer2, ElementRef   } from '@angular/core';
 import { DataService } from './data.component';
 import {NestedTreeControl} from '@angular/cdk/tree';
+import {MatAutocompleteSelectedEvent} from '@angular/material/autocomplete';
 import {FormControl, AbstractControl, ValidationErrors, ValidatorFn,FormGroupDirective, NgForm, Validators} from '@angular/forms';
 import {MatTreeNestedDataSource} from '@angular/material/tree';
 import { ChartConfiguration, ChartOptions, ChartType } from "chart.js";
 import { BaseChartDirective } from 'ng2-charts';
 import {Sort, MatSortModule} from '@angular/material/sort';
 import {ErrorStateMatcher} from '@angular/material/core';
+import { Observable, map, startWith } from 'rxjs';
+import { MatDialog } from '@angular/material/dialog';
+import { DialogChangeDialog } from './dialog.component';
 
-declare var report_url: any,jira_url:any,wiki_job:any;
+declare var report_url: any,jira_url:any;
 interface TestNode {
   name: string;
   children?: TestNode[];
@@ -46,9 +50,13 @@ export class MyErrorStateMatcher implements ErrorStateMatcher {
 })
 export class AppComponent implements OnInit {
   
-  @ViewChild(BaseChartDirective) 
+  @ViewChild(BaseChartDirective)
+  
   public chart: BaseChartDirective | undefined;
+  accountCtrl = new FormControl('');
+  filteredAccounts: Observable<string[]>;
   testTimeControl = new FormControl('',{validators:[timeFormatValidator()],updateOn:'change'});
+  @ViewChild('accountInput') accountInput: ElementRef<HTMLInputElement>;
   data:any;
   matcher = new MyErrorStateMatcher();
   jiraChanges = 0;
@@ -63,8 +71,12 @@ export class AppComponent implements OnInit {
   };
   frontend:any;
   backend:any;  
+  conflict_changes:any=[];
   jira:any;
+  is_processing = false;
   data_type = "";
+  build:number;
+  task_build:number;
   initialized = false;
   workspace = "Tests";
   summarys : any;
@@ -85,10 +97,31 @@ export class AppComponent implements OnInit {
   owners:any;
   new_jira:any;
   owner_list:any = [];
-  constructor(private dataService: DataService,private _renderer2: Renderer2
-    ){}
+  error_message = "";
+  last_build = false;
+  job_url = "";
+  
+  constructor(public dialog:MatDialog, private dataService: DataService,private _renderer2: Renderer2
+    ){
+      this.filteredAccounts = this.accountCtrl.valueChanges.pipe(
+        startWith(null),
+        map((account: string | null) => (account ? this._filter(account) : this.data[this.selectIndex].timelines.account_list.slice())),
+      );
+
+    }
   ngOnInit(){
-    
+    if (report_url && report_url.indexOf("jenkins")>0){
+      var job_url = report_url.substring(0,report_url.indexOf("/Workspace")).replace(/\/+$/,"");
+      var items = job_url.split("/");
+      var build_n = items.pop();
+      this.build = parseInt(build_n);
+      this.job_url = items.join("/");
+      this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
+        if (data.number == this.build){
+          this.last_build = true;
+        }
+      })
+    }
     if (window.parent){
       this.test_id = window.parent.location.hash;      
     }else{
@@ -132,6 +165,7 @@ export class AppComponent implements OnInit {
         var moved_jiras = 0;
         var scenarios:any = {};
         var passed_jiras_list:any = [];
+        var start_test = new Date(data[key].start_time);
         if (data[key].owners){
           for (let owner in data[key].owners){
             if (!(this.owners[owner])){
@@ -180,6 +214,15 @@ export class AppComponent implements OnInit {
                   if (feature_data.children){
                     feature_data.children.push(scenario_data);
                   }              
+                  if (scenario_data.data.last_success_test){
+                    var test_time = new Date(scenario_data.data.last_success_test.test_time);
+
+                    if ((start_test.getTime() - test_time.getTime())/(24*60*60*1000) >= 2){
+                      scenario_data.data.error = true;
+                    }
+                  }else{
+                    scenario_data.data.error = true;
+                  }
                   if (this.test_id != "" && scenario_data.data.url.indexOf(this.test_id) > 0){
                     expand_nodes["feature"] = feature_data;
                     expand_nodes["job"] = job_data;                                                            
@@ -249,7 +292,7 @@ export class AppComponent implements OnInit {
         context_data.data.data = pages;
         tasks_data.data.data = tasks;
         var env_data:any = {name:data[key].Env,perspectives:[cucumber_data,context_data,cases_data,tasks_data],selected:false,jiras:[],
-            timelines:{containers:[],start_time:"",end_time:"",duration:0,value:0,headers:['name','start_time','end_time','duration','total','failed'],data_source:[]}};
+            timelines:{containers:[],start_time:"",end_time:"",duration:0,value:0,headers:['name','start_time','end_time','duration','total','failed'],data_source:[]},scenarios:scenarios};
         if (data[key].jiras){
           env_data.jiras = data[key].jiras;
         }
@@ -300,8 +343,10 @@ export class AppComponent implements OnInit {
           env_data.passed_jiras = passed_jiras;          
           env_data.moved_jiras = moved_jiras; 
           env_data.checked_cases = env_check_cases;  
-          env_data.version = data[key].version;                      
-          env_data.timelines.containers.sort((a:any,b:any)=>((a.end_time > b.end_time)?1:((b.end_time > a.end_time)?-1:0)))
+          env_data.version = data[key].version;  
+          env_data.start_time = data[key].start_time;
+          env_data.end_time = data[key].end_time;
+          env_data.timelines.containers.sort((a:any,b:any)=>((a.name > b.name)?1:((b.name > a.name)?-1:0)))
         }        
         var summary_data = {name:data[key].Env,data:data[key].summary};
         summary_data.data.sort((a:any,b:any)=>(a["Started on"] > b["Started on"])?1:((b["Started on"] > a["Started on"])?-1:0))
@@ -316,18 +361,172 @@ export class AppComponent implements OnInit {
       this.initialized = true;      
       document.getElementById("loading_mask")!.style.display = "none";  
       this.setReportData();    
-      if (this.configure && this.configure.task_job){
-        var job_url = this.configure.task_job + "/api/json";
-        this.dataService.getData(job_url).subscribe((data)=>{
-          this.configure.task_build = data.lastSuccessfulBuild.number;
-        }
-
-        );
-      }
+      this.fetchTasks();
      });     
   }
 
-  confirmTask(){
+  fetchTasks(){
+    if (this.configure && this.configure.task_job && location.origin.indexOf("local")<0){
+      var job_url = this.configure.task_job + "/lastBuild/api/json";
+      this.dataService.getData(job_url).subscribe((data)=>{
+        this.configure.task_build = data.number;
+        this.is_processing = data.inProcess||data.building;
+        if (data.result != "SUCCESS"){
+          this.error_message = "Management jenkins job got some issue. Pleaes contact admin!";
+          return
+        }
+        if(this.is_processing){
+          setTimeout(this.fetchTasks,5000);
+        }else{
+          var task_url = this.configure.task_job + "/tasks/tasks.json";
+          this.dataService.getData(task_url).subscribe((data)=>{
+            this.loadTasks(data);
+          })
+        }  
+      }
+      );
+    }else{
+      this.dataService.getData("/tasks.json").subscribe((data)=>{
+        this.loadTasks(data);
+      })
+
+    }
+
+  }
+  loadTasks(data:any){    
+    if (data.build == this.build || location.origin.indexOf("local") > 0){
+      this.updateJiras(data.jiras);
+    }
+    if (data.build <= this.build || location.origin.indexOf("local") > 0){
+      this.task_build = data.task_build;
+      var tasks = data.tasks;
+      for (let envData of this.data){        
+        if (envData.name in tasks){
+          var task_nodes = envData.perspectives[3].data.data;
+          var task_list = tasks[envData.name];
+          var scenarios:any = [];
+          for (let task of task_list){
+            for(let scenario in task.scenarios){
+              
+              if (scenario in envData.scenarios){
+                var scenario_obj = task.scenarios[scenario]
+                var scenario_data = envData.scenarios[scenario];
+                scenario_data.data.comments = scenario_obj.comments;
+                scenario_data.data.assigned = task.owner;                
+                scenarios.push(scenario_data)
+              }
+            }          
+          }
+          for (let scenario of scenarios){
+            this.setTask(task_nodes,scenario)
+          }
+          envData.perspectives[3].data.data = task_nodes;
+        }
+      }  
+    }
+
+  }
+  updateTasks(tasks:any){
+    this.conflict_changes = [];    
+    for (let envData of this.data){    
+      if (envData.name in tasks){
+        var task_list = tasks[envData.name];
+        var tasks_data = envData.perspectives[3].data.data;
+        envData.task_changes = []
+        for (let task of task_list){
+          for(let scenario in task.scenarios){
+            if (scenario in envData.scenarios){
+                var scenario_dict = task.scenarios[scenario];
+                var scenario_data = envData.scenarios[scenario];
+                if (scenario_data.owner != scenario_dict.owner){
+                  var change:any = {};
+                  change["src"] = scenario_data.owner;
+                  change["dst"] = scenario_dict.owner;
+                  change.env = envData.name;
+                  change.scenario = scenario_data.name;
+                  envData.changes.push(change)
+                  
+                }
+                scenario_data.data.owner = scenario_dict.owner;
+                scenario_data.data.comments = scenario_dict.comments;
+                scenario_data.data.is_monitored = scenario_dict.is_monitored;
+                scenario_data.data.new_comment = {};
+                this.setTask(tasks_data,scenario_data);
+            }
+          }
+        }
+        this.conflict_changes.push({name:envData.name,changes:envData.task_changes})        
+      }
+    }
+  }
+
+  //update jiras only add 
+  updateJiras(jiras:any){
+    for (let envData of this.data){      
+      var jira_nodes:TestNode[] = [];
+      envData.jiras = jiras.filter((item:any)=>item.version<=envData.version)
+      var jira_list = envData.perspectives[2].data.data;  
+      var jira_ids:any = [];
+      for (let jira of jiras){
+        if (jira.version <= envData.version){            
+            for (let case_data of jira_list){                            
+              if(case_data.data.id == jira.id){ 
+                jira_ids.push(jira.id);               
+                var remove_list:any = [];
+                var scenario_list:any = [];
+                for (let scenario_data of case_data.data.scenarios){
+                  if (jira.scenarios.indexOf(scenario_data.name) < 0){
+                    var jira_index = scenario_data.data.jiras.indexOf(jira.id);
+                    if (jira_index >=0){
+                      scenario_data.data.jiras.splice(jira_index,1);
+                      scenario_data.data.removed = scenario_data.data.removed.filter((case_id:string)=>case_id!=jira.id);
+                    }                    
+                    remove_list.push(scenario_data.name);
+                  }else{
+                    scenario_list.push(scenario_data.name);
+                  }
+                }                
+                case_data.data.scenarios = case_data.data.scenarios.filter((item:any)=>remove_list.indexOf(item.name)<0);
+                case_data.data.removed = case_data.data.removed.filter((item:string)=>remove_list.indexOf(item)<0);
+                var change_list = jira.scenarios.filter((item:string)=>scenario_list.indexOf(item)<0)
+                for (let scenario_name of change_list){
+                  if (scenario_name in envData.scenarios){
+                    case_data.data.scenarios.push(envData.scenarios[scenario_name]);
+                    envData.scenarios[scenario_name].data.changes = 
+                      envData.scenarios[scenario_name].data.changes.filter((item:string)=>item!=jira.id);
+                  }
+                }
+                case_data.data.changes = case_data.data.changes.filter((item:any)=>change_list.indexOf(item.name)<0);
+                case_data.data.scenario_text = jira.scenario_text;
+                jira_nodes.push(case_data);
+              }else{
+                for (let scenario_data of case_data.data.scenarios){
+                  scenario_data.data.jiras = scenario_data.data.jiras.filter((item:string)=>item!=case_data.data.id);
+                  scenario_data.data.removed = scenario_data.data.removed.filter((item:string)=>item!=case_data.data.id);
+                }
+                for (let scenario_data of case_data.data.changes){
+                  scenario_data.data.changes = scenario_data.data.changes.filter((item:string)=>item!=case_data.data.id);
+                }
+              }
+              
+            }
+            
+        }
+      }
+      var new_jiras = jiras.filter((item:any)=>jira_ids.indexOf(item.id)<0 && item.version <= envData.version);
+      for (let jira of new_jiras){
+        var case_data:TestNode ={name:jira.id+":"+jira.summary,children:[],data:{
+          id:jira.id,summary:jira.summary,scenarios:[],changes:[],checked:[],removed:[],existing:[],jiras:envData.jiras,type:"jira",
+          scenario_text:jira.scenario_text,passed_tests:jira.passed_tests
+        }};          
+        for (let scenario of jira.scenarios){
+          var scenario_data = envData.scenarios[scenario];
+          case_data.data.scenarios.push(scenario_data);
+          scenario_data.data.jiras.push(jira.id);
+        }
+      }
+    }
+
 
   }
   updateJiraChanges(){
@@ -346,43 +545,155 @@ export class AppComponent implements OnInit {
     console.log(this.jiraChanges);
   }
   
-  submitChanges(){
-    var changes:any={version:this.data[this.selectIndex].summary["PORTAL VERSION"],jiras:[]};
-    for (let case_data of this.data[this.selectIndex].perspectives[2].data._data._value){
-      if (case_data.data.removed.length + case_data.data.changes.length > 0){
-        var jira:any = {};
-        jira.id = case_data.data.id
-        jira.scenarios = [];
-        for (let scenario_data of case_data.data.scenarios){
-          if (case_data.data.removed.indexOf(scenario_data.name) < 0 ){
-            jira.scenarios.push(scenario_data.name);
-          }
+  submitChanges(){    
+    this.is_processing = true;
+    this.updateChanges();
+    this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
+      if (data.number == this.build){
+        this.last_build = true;
+        this.checkTaskVersion();
+        var totalChange = 0;
+        for (let key of this.data){
+          totalChange += this.data[key].changes.length;
         }
-        for (let scenario_data of case_data.data.changes){
-          jira.scenarios.push(scenario_data.name);
+        if(totalChange > 0){
+          var dialogRef = this.dialog.open(DialogChangeDialog,{data:this.conflict_changes});
+          dialogRef.afterClosed().subscribe((result)=>{
+            if(result){
+              this.updateChanges();
+            }
+          })
+      
         }
-        changes.jiras.push(jira);
+      }else{
+        this.last_build = false;
+        this.error_message = "The test result of the current workspace is out of date. Please submit the changes against the result of build " + data.number;
       }
-    }
-    if (this.user){
-      changes.user = this.user;
-    }
-    if (location.origin.toLowerCase().indexOf("localhost") < 0){
-      var requestData = new URLSearchParams();
-      requestData.append("blob",JSON.stringify(changes));
-      fetch(wiki_job,{
-        method:"POST",
-        headers:{
-          'Accept': 'text/html,application/xhtml+xml,application/xml',
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Jenkins-Crumb': this.user.crumb
-        },
-        body:requestData
-      })
-    }
-    console.log(changes);
+    })
+
   }
 
+  updateChanges(){
+    var changes:any={build:this.build,jiras:[]};
+    
+    changes.tasks = {};
+    var task_queue = ['removed','scenarios','changes']
+    for (let envData of this.data){
+      for (let case_data of envData.perspectives[2].data.data){
+        if (case_data.data.removed.length + case_data.data.changes.length > 0){
+          var jira:any = {};
+          var existing = false;
+          jira.id = case_data.data.id;
+          for (let ticket of changes.jiras){
+            if (ticket.id == jira.id){
+              jira = ticket;
+              existing = true;
+              break;
+            }
+          }
+          if (existing){
+            if (jira.version >= envData.summary["PORTAL VERSION"]){
+              jira.version = envData.summary["PORTAL VERSION"];
+              for (let scenario_data of case_data.data.scenarios){
+                if (case_data.data.removed.indexOf(scenario_data.name) < 0 ){
+                  jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.url,feature:scenario_data.data.feature_file});
+                }
+              }
+              for (let scenario_data of case_data.data.changes){
+                jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.url,feature:scenario_data.data.feature_file});
+              }  
+            }
+          }else{
+            jira.version = envData.summary["PORTAL VERSION"];
+            jira.scenarios = [];
+            for (let scenario_data of case_data.data.scenarios){
+              if (case_data.data.removed.indexOf(scenario_data.name) < 0 ){
+                jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.data.url,feature:scenario_data.data.feature_file});
+              }
+            }
+            for (let scenario_data of case_data.data.changes){
+              jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.data.url,feature:scenario_data.data.feature_file});
+            }
+            changes.jiras.push(jira);
+          }          
+        }
+      }
+  
+      changes.tasks[envData.name] = []
+
+      for (let task_data of envData.perspectives[3].data.data){
+        var item:any = {scenarios:{}};
+        var remove_list = [];
+        if (task_data.data.removed){
+          for (let removed_item of task_data.data.removed){
+            remove_list.push(removed_item.name);
+          }
+        }
+        for (let key in task_data.data){
+          if (task_queue.indexOf(key) < 0){
+            item[key] = task_data.data[key];
+          }else{
+            for (let scenario of task_data.data.scenarios){
+              if (remove_list.indexOf(scenario.name) < 0){
+                this.setTaskScenario(item.scenarios,scenario);
+              }
+            }
+            for(let scenario of task_data.data.changes){
+              this.setTaskScenario(item.scenarios,scenario);
+            }
+          }
+        }
+        changes.tasks[envData.name].push(item);
+      }
+    }
+      if (this.user){
+        changes.user = this.user;
+      }
+      if (location.origin.toLowerCase().indexOf("localhost") < 0){
+        var requestData = new URLSearchParams();
+        requestData.append("blob",JSON.stringify(changes));
+        fetch(this.configure.task_job+"/buildWithParameters?",{
+          method:"POST",
+          headers:{
+            'Accept': 'text/html,application/xhtml+xml,application/xml',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Jenkins-Crumb': this.user.crumb
+          },
+          body:requestData
+        }).then(response=>{this.checkTaskVersion()})
+      }
+      console.log(changes);  
+  }
+  setTaskScenario(scenarios:any,scenario:any){
+    if (!(scenario.name in scenarios)){
+      scenarios[scenario.name] = {}      
+      scenarios[scenario.name].is_monitored=scenario.data.is_monitored;
+      scenarios[scenario.name].comments=scenario.data.comments;
+      scenarios[scenario.name].new_comment = scenario.data.new_comment;
+      scenarios[scenario.name].failed_step = scenario.data.failed_step;
+      scenarios[scenario.name].url = scenario.data.url;
+      scenarios[scenario.name].version = scenario.data.version;      
+    }
+  }
+
+  checkTaskVersion(){    
+    this.dataService.getData(this.configure.task_job+'/api/json').subscribe((data)=>{
+      if(!data.buildable){
+        setTimeout(this.checkTaskVersion.bind(this),5000);
+      }else{
+        if(data.task_build > this.task_build){
+          this.dataService.getData(this.configure.task_job+'/tasks/tasks.json').subscribe((data)=>{
+            this.updateJiras(data.jiras);
+            this.updateTasks(data.tasks);
+            this.task_build = data.task_build;    
+            this.is_processing = false;    
+          })
+        }
+  
+      }
+    })
+      
+  }
   enableJiraSummary(){
     if(this.jira){
       console.log(this.jira);
@@ -511,11 +822,7 @@ export class AppComponent implements OnInit {
   assignNode(jira:any){
     console.log(this.frontend);
     console.log(jira);
-    if (this.user && this.user.id in this.owner_list){
-      this.assignTask(this.owners[this.user.id].user);
-    }else{
-      this.assignTask(this.owners["liuxia01"].user);
-    }
+    this.assignSelf();
     var cases = this.frontend.node.data.case_list;
     var jira_id = jira.id;
     if (this.frontend.node.data.jiras.indexOf(jira.id) <0){
@@ -543,6 +850,8 @@ export class AppComponent implements OnInit {
     var timelines = this.data[this.selectIndex].timelines;
     var contexts:any = {}
     timelines.context_list=[];
+    timelines.account_list=[];
+    timelines.selected_accounts=[];
     for(let container of timelines.containers){
       container.visible = false;
       if(container.start_time <= current_time && container.end_time >= current_time){
@@ -550,6 +859,9 @@ export class AppComponent implements OnInit {
         for (let scenario of container.scenarios){
           if(scenario.start_time <= current_time && scenario.end_time >= current_time){
             container.scenario = scenario;
+            for (let username of scenario.test_users){
+              timelines.account_list.push(username);
+            }            
             for(let context of scenario.contexts){
               if(context.start_time <= current_time && context.end_time >= current_time){
                 container.context = context;
@@ -568,7 +880,9 @@ export class AppComponent implements OnInit {
         }  
       }
     }
+    this.accountCtrl.setValue(null);
     this.data[this.selectIndex].timelines.current_time = current_time.split(".")[0];
+    console.log(this.data[this.selectIndex].timelines);
 
   }
   formatLabel(value: number): string {
@@ -833,8 +1147,8 @@ export class AppComponent implements OnInit {
         this.frontend.node = node;
         if (!this.frontend.node.data.temp_comment){
           this.frontend.node.data.temp_comment ={};
-          if (this.frontend.node.data.is_monitor){
-            this.frontend.node.data.temp_comment.is_monitor = this.frontend.node.data.is_monitor;
+          if (this.frontend.node.data.is_monitored){
+            this.frontend.node.data.temp_comment.is_monitored = this.frontend.node.data.is_monitored;
           }
         }
         
@@ -907,7 +1221,8 @@ export class AppComponent implements OnInit {
     if (!this.frontend.node.data.new_comment){
       this.frontend.node.data.new_comment = {"user":this.user}
     }
-    this.frontend.node.data.new_comment.is_monitor = this.frontend.node.data.temp_comment.is_monitor;
+    this.assignSelf();
+    this.frontend.node.data.new_comment.is_monitored = this.frontend.node.data.temp_comment.is_monitored;
     this.frontend.node.data.new_comment.content = this.frontend.node.data.temp_comment.content;    
     var tzoffset = (new Date()).getTimezoneOffset() * 60000;
     var localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, -1);
@@ -919,7 +1234,7 @@ export class AppComponent implements OnInit {
     }
     if (this.frontend.node.data.temp_comment){
       this.frontend.node.data.temp_comment = {};
-      this.frontend.node.data.temp_comment.is_monitor = this.frontend.node.data.is_monitor;
+      this.frontend.node.data.temp_comment.is_monitored = this.frontend.node.data.is_monitored;
     }
   }
   changeEnv(_event:any){
@@ -1022,29 +1337,76 @@ export class AppComponent implements OnInit {
 
     }
   }
+  removeTask(tasks:any,scenario_data:any){
+    var owner_name = scenario_data.data.assigned;
+    if (scenario_data.data.assigned.indexOf(" ")<0){
+      owner_name = this.owners[scenario_data.data.assigned].user;
+      scenario_data.data.assigned = this.owners[scenario_data.data.assigned].user;
+    }
+
+    owner_name += "'s task";    
+    for (let task of tasks){
+      if (!task.data.scenario_list){
+        task.data.scenario_list = [];
+        for (let scenario of task.data.scenarios){
+          task.data.scenario_list.push(scenario.name);
+        }
+      }
+      var index = task.data.scenario_list.indexOf(scenario_data.name);
+      if (task.name == owner_name || index >= 0){        
+        if (index >= 0){
+          task.children.splice(index,1);
+          task.data.scenario_list.splice(index,1);
+          task.data.scenarios.splice(index,1);
+        }                 
+        task.data.removed = task.data.removed.filter((item:any)=>item.name!=scenario_data.name);
+        task.data.changes = task.data.changes.filter((item:any)=>item.name!=scenario_data.name);
+      }
+    }
+  }
 
   setTask(tasks:any,scenario_data:any){
-    var owner_name = this.owners[scenario_data.data.assigned].user + "'s task";
-    scenario_data.data.assigned = this.owners[scenario_data.data.assigned].user;
+    var owner_name = scenario_data.data.assigned;
+    if (scenario_data.data.assigned.indexOf(" ")<0){
+      owner_name = this.owners[scenario_data.data.assigned].user;
+      scenario_data.data.assigned = this.owners[scenario_data.data.assigned].user;
+    }
+    owner_name +=  "'s task";
+    if (scenario_data.data.assigned){
+      this.removeTask(tasks,scenario_data);
+    }
+    
     for (let task of tasks){
       if (task.name == owner_name){
-        task.children.push(scenario_data)
-        task.data.scenarios.push(scenario_data)
-        if (scenario_data.data.jiras){
-          for(let jira of scenario_data.data.jiras){
-            if (!(jira in task.data.jiras)){
-              task.data.jiras.push(jira);
+        if (!task.data.scenario_list){
+          task.data.scenario_list = [];
+          for (let item of task.children){
+            task.data.scenario_list.push(item.name);
+          }        
+        }      
+        if (task.data.scenario_list.indexOf(scenario_data.name) < 0){
+          task.children.push(scenario_data)
+          task.data.scenarios.push(scenario_data)
+          task.data.scenario_list.push(scenario_data.name)
+          if (scenario_data.data.jiras){
+            for(let jira of scenario_data.data.jiras){
+              if (!(jira in task.data.jiras)){
+                task.data.jiras.push(jira);
+              }
             }
-          }
+          }  
         }
         return;
       }
     }
 
-    var owner:TestNode = {name:owner_name,children:[scenario_data],data:{scenarios:[scenario_data],removed:[],changes:[],jiras:[]}}
+    var owner:TestNode = {name:owner_name,children:[scenario_data],data:{scenarios:[scenario_data],removed:[],changes:[],jiras:[],scenario_list:[scenario_data.name]}};
+    owner.data.owner = scenario_data.data.assigned;
     if (scenario_data.data.jiras){
       for (let jira of scenario_data.data.jiras){
-        owner.data.jiras.push(jira);
+        if (owner.data.jiras.indexOf(jira) < 0){
+          owner.data.jiras.push(jira);
+        }        
       }      
     }
     tasks.push(owner);
@@ -1065,10 +1427,13 @@ export class AppComponent implements OnInit {
       item.name = scenario.name;
       item.url = scenario.data.url;
       item.jiras = scenario.data.jiras;
+      item.new_comment = scenario.data.new_comment;
+      item.comments = scenario.data.comments;
+
       if (item.jiras){
         item.status = "checked";
       }
-      if (scenario.data.monitored){
+      if (scenario.data.is_monitored){
         item.status = "monitored";
       }
       for (let removed_item of node.data.removed){
@@ -1084,6 +1449,8 @@ export class AppComponent implements OnInit {
       item.name = scenario.name;
       item.url = scenario.data.data.url;
       item.jiras = scenario.data.jiras;
+      item.new_comment = scenario.data.new_comment;
+      item.comments = scenario.data.comments;
       if (item.jiras && item.jiras.length > 0){
         item.status = "checked";
         for (let jira in item.jiras){
@@ -1095,22 +1462,40 @@ export class AppComponent implements OnInit {
           }
         }
       }
-      if (scenario.data.monitored){
+      if (scenario.data.is_monitored){
         item.status = "monitored";
       }
       item.updated = true;
       this.task.scenario_list.push(item);
+      console.log(this.task);
+      console.log(node);
     }
   }
+  assignSelf(){
+    if (this.user && this.user.id in this.owners){      
+      this.assignTask(this.owners[this.user.id].user);
+    }else{
+      this.assignTask("Unsigned");
+    }
+  }
+
   assignTask(owner:any){
     console.log(owner);
     var task_name = owner + "'s task";
+    if (owner == "Unsigned"){
+      task_name = "Unsigned task"
+    }
+
+    
     var tasks = this.data[this.selectIndex].perspectives[3].data.data;
     var scenario_data = this.frontend.node;
     var srcTask,dstTask;
     var src_task_name;
     if (scenario_data.data.assigned){
       src_task_name = scenario_data.data.assigned + "'s task";
+    }
+    if (scenario_data.data.assigned && scenario_data.data.assigned == owner){
+      return
     }
     scenario_data.data.assigned = owner;
     this.frontend.assigned = owner;
@@ -1119,8 +1504,9 @@ export class AppComponent implements OnInit {
       if (task.name == task_name){
         task.children.push(scenario_data)              
         dstTask = task;
-        if (scenario_data in dstTask.data.scenarios){
-          dstTask.data.removed = dstTask.data.removed.filter((item:TestNode)=>item.name!==scenario_data.name);
+        var index = dstTask.data.scenario_list.indexOf(scenario_data.name);
+        if (index >= 0){
+          dstTask.data.removed = dstTask.data.removed.filter((item:TestNode)=>item.name!==scenario_data.name);          
         }else{
           dstTask.data.changes.push(scenario_data);
         }  
@@ -1152,7 +1538,8 @@ export class AppComponent implements OnInit {
       tasks = tasks.map((t:TestNode)=>t.name !== task.name? t:task)
     }
     if (!dstTask){
-      var task:TestNode = {name:task_name,children:[scenario_data],data:{scenarios:[],changes:[scenario_data],removed:[],jiras:[]}}
+      var task:TestNode = {name:task_name,children:[scenario_data],data:{scenarios:[],changes:[scenario_data],removed:[],jiras:[],scenario_list:[]}}
+      task.data.owner = owner;
       this.taskChanges++;
       tasks.push(task);
     }else{
@@ -1164,6 +1551,8 @@ export class AppComponent implements OnInit {
 
     return;
   }
+
+  //remove jira from task
   removeJiraTask(scenario_data:any,task:any){
     var task_scenario_list:any[] = [];
     for (let scenario of task.data.scenarios){
@@ -1316,6 +1705,63 @@ export class AppComponent implements OnInit {
   compare(a: number | string, b: number | string, isAsc: boolean) {
     return (a < b ? -1 : 1) * (isAsc ? 1 : -1);
   }
+  removeAccount(account: string): void {
+    var selected_accounts = this.data[this.selectIndex].timelines.selected_accounts;
+    const index = selected_accounts.indexOf(account);
+
+    if (index >= 0) {
+      selected_accounts.splice(index, 1);      
+    }
+    for (let context of this.data[this.selectIndex].timelines.context_list){
+      var c_checked = true;
+      var some = false;
+      for (let container of context.containers){
+        if (container.scenario.test_users.indexOf(account)>=0){
+          var checked = false;
+          for (let selected_account of selected_accounts){
+            if (container.scenario.test_users.indexOf(selected_account) >= 0){
+              checked = true;
+            }  
+          }
+          container.checked = checked;          
+        }  
+        if(!container.checked){
+          c_checked = false;
+        }else{
+          some = true;
+        }
+      }
+      context.checked = c_checked;
+      context.some = some;
+    }
+    this.containerDetail(this.data[this.selectIndex].timelines);
+  }
+  selectAccount(event: MatAutocompleteSelectedEvent): void {
+    var account = event.option.viewValue;
+    this.data[this.selectIndex].timelines.selected_accounts.push(account);
+    for (let context of this.data[this.selectIndex].timelines.context_list){
+      var checked = true;
+      var some = context.some;
+      for (let container of context.containers){        
+        if (container.scenario.test_users.indexOf(account)>=0){
+          container.checked = true;
+        }
+        if (!container.checked){
+          checked = false;
+        }else{
+          some = true;
+        }          
+      }
+      if (checked){
+        context.checked = true;
+      }else{
+        context.some = some;
+      }
+    }
+    this.containerDetail(this.data[this.selectIndex].timelines);
+    this.accountInput.nativeElement.value = '';
+    this.accountCtrl.setValue(null);
+  }
   validate(){
     if (this.new_jira){
       if(this.new_jira.is_new){
@@ -1333,5 +1779,10 @@ export class AppComponent implements OnInit {
       }      
     }
     return false;
+  }
+  private _filter(value: string): string[] {
+    const filterValue = value.toLowerCase();
+
+    return this.data[this.selectIndex].timelines.account_list.filter((account: string) => account.toLowerCase().includes(filterValue));
   }
 }

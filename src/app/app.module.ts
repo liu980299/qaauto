@@ -21,12 +21,17 @@ import {MatBadgeModule} from '@angular/material/badge';
 import {MatSortModule} from '@angular/material/sort';
 import { NgChartsModule } from 'ng2-charts';
 import {FormsModule, ReactiveFormsModule} from '@angular/forms';
+import {MatChipsModule} from '@angular/material/chips';
+import {MatAutocompleteModule} from '@angular/material/autocomplete';
+import {MatDialogModule} from '@angular/material/dialog';
+import {DialogChangeDialog} from './dialog.component';
 
 
 
 @NgModule({
   declarations: [
-    AppComponent
+    AppComponent,
+    DialogChangeDialog
   ],
   imports: [
     HttpClientModule,
@@ -49,7 +54,10 @@ import {FormsModule, ReactiveFormsModule} from '@angular/forms';
     MatBadgeModule,
     MatSelectModule,
     MatSortModule,
-    NgChartsModule
+    MatChipsModule,
+    NgChartsModule,
+    MatDialogModule,
+    MatAutocompleteModule
     
   ],
   providers: [DataService
