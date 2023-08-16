@@ -45,13 +45,15 @@
           </div>
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
-          <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>            
-            <button  class="scenario-text" (click)="selectNode(node)"  
+          <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
+            <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unsigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>            
+            <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0))"
             [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && !node.data.is_new"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
             [class.changed]="node.data && node.data.changes && node.data.removed && node.data.changes.length + node.data.removed.length > 0 && !node.data.selected" 
             [class.selected]="node.data && node.data.selected"            
-            >{{node.name}}<span *ngIf="perspective.name=='Jiras'" [matBadge]="node.data.changes.length+node.data.removed.length" [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small"></span></button>
+            >{{node.name}}<span *ngIf="perspective.name=='Jiras'||perspective.name=='Tasks'" [matBadge]="node.data.changes.length+node.data.removed.length" [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small"></span>        
+            </button>
         </mat-tree-node>
           <!-- There is inline padding applied to this node using styles.
             This padding value depends on the mat-icon-button width. -->
@@ -65,7 +67,7 @@
                   </mat-icon>
                 </button>
                 <span *ngIf="perspective.name!='Tasks'">{{node.name}}</span>
-                <button *ngIf="perspective.name=='Tasks'" [matBadge]="node.data.changes.length + node.data.removed.length" [matBadgeHidden]="node.data.changes.length + node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
+                <button *ngIf="perspective.name=='Tasks'" [matBadge]="node.data.task_changes" [matBadgeHidden]="node.data.task_changes==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
               </div>
               <!-- There is inline padding applied to this div using styles.
                   This padding value depends on the mat-icon-button width.  -->
@@ -233,7 +235,7 @@
           <h3 *ngIf="!jira.data.is_updating"><span>{{jira.name}}</span><button mat-raised-button  color="primary" style="margin-left: 10px;" *ngIf="jira.data.is_added" (click)="updateJira()">Update</button></h3>          
           <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="jira_menu" [disabled]="jira.data.checked.length==0">Assign to Case</button>
           <mat-menu #jira_menu="matMenu">
-            <div *ngFor="let case of jira.data.jiras">
+            <div *ngFor="let case of data[selectIndex].jiras">
             <button mat-menu-item  class="menu-item" *ngIf="(case.id + ':' + case.summary) != jira.name" (click)="moveScenarios(jira, case)">{{case.id}}:{{case.summary}}</button>              
             </div>
           </mat-menu>
@@ -256,7 +258,7 @@
         </div>
         <div *ngIf="new_jira">
 
-            <mat-checkbox [(ngModel)]="new_jira.is_new">Create a new Jira</mat-checkbox>
+            <mat-checkbox [(ngModel)]="new_jira.is_new" *ngIf="configure.jira_user==user.email">Create a new Jira</mat-checkbox>
 
           <div *ngIf="!new_jira.is_new">
           <mat-form-field >
@@ -296,6 +298,7 @@
             <textarea matInput [(ngModel)]="new_jira.steps" required></textarea>                        
           </mat-form-field>
         </div>
+        <div *ngIf="new_jira.error&&new_jira.error.length>0" style="color:red">{{new_jira.error}}</div>
           <button mat-raised-button  color="primary" style="margin-left: 10px;display: block;" [disabled]="!validate()" (click)="saveJira()">Save</button>
         </div>
         <div *ngIf="!jira && !new_jira">
@@ -385,7 +388,7 @@
             <button mat-raised-button (click)="copyLink()" color="primary" style="margin-left: 10%;">Copy</button>
             <button mat-raised-button (click)="gotoError()" color="primary" style="margin-left: 10px;">Error Step</button>
             <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;" >{{frontend.show_log}}</button>
-            <button mat-raised-button (click)="manageSwitch()" color="primary" style="margin-left: 10px;" >{{frontend.show_management}}</button>
+            <button mat-raised-button (click)="manageSwitch()" color="primary" style="margin-left: 10px;" [disabled]="!last_build">{{frontend.show_management}}</button>
             
            </div>           
            <h3><a [href]="frontend.screenshots_url" target="_blank" *ngIf="frontend.screenshots_url" class="button">Download Screenshots Archive</a></h3> 
@@ -484,4 +487,5 @@
   </as-split-area>
 
 </as-split>
-<button mat-raised-button [disabled] = "jiraChanges+taskChanges==0 || is_processing" color="primary" (click)="submitChanges()">Submit</button><span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span><span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>
+<button mat-raised-button [disabled] = "jiraChanges+taskChanges==0 || is_processing ||!last_build" color="primary" (click)="submitChanges()">Submit</button><span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span><span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>
+<div *ngIf="error_message" style="color:red">{{error_message}}</div>

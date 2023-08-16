@@ -62,6 +62,8 @@ export class AppComponent implements OnInit {
   jiraChanges = 0;
   taskChanges = 0;
   changedJiras = 0;
+  submit = false;
+  update_changes = false;
   treeControl = new NestedTreeControl<TestNode>(node => node.children);
   public lineChartData: ChartConfiguration<'line'>['data'] ={labels:[],datasets:[],
 
@@ -116,11 +118,7 @@ export class AppComponent implements OnInit {
       var build_n = items.pop();
       this.build = parseInt(build_n);
       this.job_url = items.join("/");
-      this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
-        if (data.number == this.build){
-          this.last_build = true;
-        }
-      })
+      this.checkBuild();
     }
     if (window.parent){
       this.test_id = window.parent.location.hash;      
@@ -237,7 +235,7 @@ export class AppComponent implements OnInit {
                   scenarios[scenario] = scenario_data;
                   scenario_data.data.case_list = cases;
                   if(scenario_data.data.assigned){
-                      this.setTask(tasks,scenario_data)
+                      tasks = this.setTask(tasks,scenario_data);
                   }
                   for (let jira of data[key].jiras){
                     if (scenario_data.data.JIRA && scenario_data.data.JIRA.indexOf(jira.id) >= 0){
@@ -365,6 +363,16 @@ export class AppComponent implements OnInit {
      });     
   }
 
+  checkBuild(){
+    this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
+      if (data.number == this.build){
+        this.last_build = true;
+      }else{
+        this.last_build = false;
+        this.error_message = "The test result of the current workspace is out of date. Please submit the changes against the result of build " + data.number;
+      }
+    })
+  }
   fetchTasks(){
     if (this.configure && this.configure.task_job && location.origin.indexOf("local")<0){
       var job_url = this.configure.task_job + "/lastBuild/api/json";
@@ -372,7 +380,7 @@ export class AppComponent implements OnInit {
         this.configure.task_build = data.number;
         this.is_processing = data.inProcess||data.building;
         if (data.result != "SUCCESS"){
-          this.error_message = "Management jenkins job got some issue. Pleaes contact admin!";
+          this.error_message = "Management jenkins job got some issue. Please contact admin!";
           return
         }
         if(this.is_processing){
@@ -388,6 +396,7 @@ export class AppComponent implements OnInit {
     }else{
       this.dataService.getData("/tasks.json").subscribe((data)=>{
         this.loadTasks(data);
+        console.log(this.data);
       })
 
     }
@@ -400,10 +409,11 @@ export class AppComponent implements OnInit {
     if (data.build <= this.build || location.origin.indexOf("local") > 0){
       this.task_build = data.task_build;
       var tasks = data.tasks;
-      for (let envData of this.data){        
-        if (envData.name in tasks){
+      for (let envData of this.data){ 
+        var version = envData.version.split(".").splice(0,2).join(".");       
+        if (version in tasks){
           var task_nodes = envData.perspectives[3].data.data;
-          var task_list = tasks[envData.name];
+          var task_list = tasks[version];
           var scenarios:any = [];
           for (let task of task_list){
             for(let scenario in task.scenarios){
@@ -418,7 +428,7 @@ export class AppComponent implements OnInit {
             }          
           }
           for (let scenario of scenarios){
-            this.setTask(task_nodes,scenario)
+            task_nodes = this.setTask(task_nodes,scenario);
           }
           envData.perspectives[3].data.data = task_nodes;
         }
@@ -426,11 +436,18 @@ export class AppComponent implements OnInit {
     }
 
   }
+  getVersion(envData:any) {
+    if (envData.version){
+      return envData.version.split(".").splice(0,2).join(".");
+    }
+
+  }
   updateTasks(tasks:any){
     this.conflict_changes = [];    
-    for (let envData of this.data){    
-      if (envData.name in tasks){
-        var task_list = tasks[envData.name];
+    for (let envData of this.data){  
+      var version = this.getVersion(envData);
+      if (version in tasks){
+        var task_list = tasks[version];
         var tasks_data = envData.perspectives[3].data.data;
         envData.task_changes = []
         for (let task of task_list){
@@ -451,13 +468,14 @@ export class AppComponent implements OnInit {
                 scenario_data.data.comments = scenario_dict.comments;
                 scenario_data.data.is_monitored = scenario_dict.is_monitored;
                 scenario_data.data.new_comment = {};
-                this.setTask(tasks_data,scenario_data);
+                tasks_data = this.setTask(tasks_data,scenario_data);
             }
           }
         }
         this.conflict_changes.push({name:envData.name,changes:envData.task_changes})        
       }
     }
+    this.updateTaskChanges();
   }
 
   //update jiras only add 
@@ -474,12 +492,17 @@ export class AppComponent implements OnInit {
                 jira_ids.push(jira.id);               
                 var remove_list:any = [];
                 var scenario_list:any = [];
+                var jira_scenarios:any = [];
+                for (let scenario of jira.scenarios){
+                  jira_scenarios.push(scenario.name);
+                }
                 for (let scenario_data of case_data.data.scenarios){
-                  if (jira.scenarios.indexOf(scenario_data.name) < 0){
+                  if (jira_scenarios.indexOf(scenario_data.name) < 0){
                     var jira_index = scenario_data.data.jiras.indexOf(jira.id);
                     if (jira_index >=0){
                       scenario_data.data.jiras.splice(jira_index,1);
                       scenario_data.data.removed = scenario_data.data.removed.filter((case_id:string)=>case_id!=jira.id);
+                      scenario_data.data.changed = scenario_data.data.changes.filter((case_id:string)=>case_id!=jira.id);
                     }                    
                     remove_list.push(scenario_data.name);
                   }else{
@@ -488,24 +511,25 @@ export class AppComponent implements OnInit {
                 }                
                 case_data.data.scenarios = case_data.data.scenarios.filter((item:any)=>remove_list.indexOf(item.name)<0);
                 case_data.data.removed = case_data.data.removed.filter((item:string)=>remove_list.indexOf(item)<0);
-                var change_list = jira.scenarios.filter((item:string)=>scenario_list.indexOf(item)<0)
-                for (let scenario_name of change_list){
-                  if (scenario_name in envData.scenarios){
-                    case_data.data.scenarios.push(envData.scenarios[scenario_name]);
-                    envData.scenarios[scenario_name].data.changes = 
-                      envData.scenarios[scenario_name].data.changes.filter((item:string)=>item!=jira.id);
+                var change_list = jira.scenarios.filter((item:any)=>scenario_list.indexOf(item.name)<0)
+                for (let scenario of change_list){
+                  if (scenario.name in envData.scenarios){
+                    case_data.data.scenarios.push(envData.scenarios[scenario.name]);
+                    envData.scenarios[scenario.name].data.changes = 
+                      envData.scenarios[scenario.name].data.changes.filter((item:string)=>item!=jira.id);
                   }
                 }
-                case_data.data.changes = case_data.data.changes.filter((item:any)=>change_list.indexOf(item.name)<0);
+                case_data.data.changes = case_data.data.changes.filter((item:any)=>jira_scenarios.indexOf(item.name)<0);
                 case_data.data.scenario_text = jira.scenario_text;
                 jira_nodes.push(case_data);
               }else{
                 for (let scenario_data of case_data.data.scenarios){
-                  scenario_data.data.jiras = scenario_data.data.jiras.filter((item:string)=>item!=case_data.data.id);
-                  scenario_data.data.removed = scenario_data.data.removed.filter((item:string)=>item!=case_data.data.id);
+                  scenario_data.data.jiras = scenario_data.data.jiras.filter((item:string)=>item!=jira.id);
+                  scenario_data.data.JIRA = scenario_data.data.jiras.join(",");
+                  scenario_data.data.removed = scenario_data.data.removed.filter((item:string)=>item!=jira.id);
                 }
                 for (let scenario_data of case_data.data.changes){
-                  scenario_data.data.changes = scenario_data.data.changes.filter((item:string)=>item!=case_data.data.id);
+                  scenario_data.data.changes = scenario_data.data.changes.filter((item:string)=>item!=jira.id);
                 }
               }
               
@@ -520,20 +544,23 @@ export class AppComponent implements OnInit {
           scenario_text:jira.scenario_text,passed_tests:jira.passed_tests
         }};          
         for (let scenario of jira.scenarios){
-          var scenario_data = envData.scenarios[scenario];
+          var scenario_data = envData.scenarios[scenario.name];
           case_data.data.scenarios.push(scenario_data);
           scenario_data.data.jiras.push(jira.id);
+          scenario_data.data.JIRA = scenario_data.data.jiras.join(",");
         }
+        jira_list.push(case_data);
       }
+      envData.perspectives[2].data.data = jira_list;
     }
-
+    this.updateJiraChanges();
 
   }
   updateJiraChanges(){
     var changes = 0;
     var changedJiras = 0;
     for (let env of this.data){
-      for (let case_data of env.perspectives[2].data._data._value){
+      for (let case_data of env.perspectives[2].data.data){
         if (case_data.data.changes.length + case_data.data.removed.length > 0){
           changes += case_data.data.changes.length + case_data.data.removed.length;
           changedJiras ++;
@@ -546,25 +573,12 @@ export class AppComponent implements OnInit {
   }
   
   submitChanges(){    
-    this.is_processing = true;
-    this.updateChanges();
+    this.is_processing = true;    
     this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
       if (data.number == this.build){
         this.last_build = true;
+        this.submit = true;
         this.checkTaskVersion();
-        var totalChange = 0;
-        for (let key of this.data){
-          totalChange += this.data[key].changes.length;
-        }
-        if(totalChange > 0){
-          var dialogRef = this.dialog.open(DialogChangeDialog,{data:this.conflict_changes});
-          dialogRef.afterClosed().subscribe((result)=>{
-            if(result){
-              this.updateChanges();
-            }
-          })
-      
-        }
       }else{
         this.last_build = false;
         this.error_message = "The test result of the current workspace is out of date. Please submit the changes against the result of build " + data.number;
@@ -596,11 +610,11 @@ export class AppComponent implements OnInit {
               jira.version = envData.summary["PORTAL VERSION"];
               for (let scenario_data of case_data.data.scenarios){
                 if (case_data.data.removed.indexOf(scenario_data.name) < 0 ){
-                  jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.url,feature:scenario_data.data.feature_file});
+                  jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.scenario_url,feature:scenario_data.data.feature_file});
                 }
               }
               for (let scenario_data of case_data.data.changes){
-                jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.url,feature:scenario_data.data.feature_file});
+                jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.scenario_url,feature:scenario_data.data.feature_file});
               }  
             }
           }else{
@@ -608,21 +622,24 @@ export class AppComponent implements OnInit {
             jira.scenarios = [];
             for (let scenario_data of case_data.data.scenarios){
               if (case_data.data.removed.indexOf(scenario_data.name) < 0 ){
-                jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.data.url,feature:scenario_data.data.feature_file});
+                jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.scenario_url,feature:scenario_data.data.feature_file});
               }
             }
             for (let scenario_data of case_data.data.changes){
-              jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.data.url,feature:scenario_data.data.feature_file});
+              jira.scenarios.push({name:scenario_data.name,url:scenario_data.data.scenario_url,feature:scenario_data.data.feature_file});
             }
             changes.jiras.push(jira);
           }          
         }
       }
-  
-      changes.tasks[envData.name] = []
-
+      var version = this.getVersion(envData);
+      if (!(version in changes.tasks)){
+        changes.tasks[version] = []
+      }
+      
       for (let task_data of envData.perspectives[3].data.data){
         var item:any = {scenarios:{}};
+        item["env"] = envData.name
         var remove_list = [];
         if (task_data.data.removed){
           for (let removed_item of task_data.data.removed){
@@ -635,15 +652,17 @@ export class AppComponent implements OnInit {
           }else{
             for (let scenario of task_data.data.scenarios){
               if (remove_list.indexOf(scenario.name) < 0){
-                this.setTaskScenario(item.scenarios,scenario);
+                this.setTaskScenario(item.scenarios,scenario,false);
               }
             }
             for(let scenario of task_data.data.changes){
-              this.setTaskScenario(item.scenarios,scenario);
+              item.changed = true;
+              this.setTaskScenario(item.scenarios,scenario,true);
+
             }
           }
         }
-        changes.tasks[envData.name].push(item);
+        changes.tasks[version].push(item);
       }
     }
       if (this.user){
@@ -652,6 +671,7 @@ export class AppComponent implements OnInit {
       if (location.origin.toLowerCase().indexOf("localhost") < 0){
         var requestData = new URLSearchParams();
         requestData.append("blob",JSON.stringify(changes));
+        this.update_changes = true;
         fetch(this.configure.task_job+"/buildWithParameters?",{
           method:"POST",
           headers:{
@@ -660,39 +680,74 @@ export class AppComponent implements OnInit {
             'Jenkins-Crumb': this.user.crumb
           },
           body:requestData
-        }).then(response=>{this.checkTaskVersion()})
+        }).then(response=>{setTimeout(this.checkTaskVersion.bind(this),10000);})
       }
       console.log(changes);  
   }
-  setTaskScenario(scenarios:any,scenario:any){
+  setTaskScenario(scenarios:any,scenario:any,changed:boolean){
     if (!(scenario.name in scenarios)){
       scenarios[scenario.name] = {}      
       scenarios[scenario.name].is_monitored=scenario.data.is_monitored;
       scenarios[scenario.name].comments=scenario.data.comments;
       scenarios[scenario.name].new_comment = scenario.data.new_comment;
       scenarios[scenario.name].failed_step = scenario.data.failed_step;
-      scenarios[scenario.name].url = scenario.data.url;
+      scenarios[scenario.name].url = scenario.data.scenario_url;
+      scenarios[scenario.name].work_url = report_url + "#" + scenario.data.url.split("/")[1].split(".")[0];
+      scenarios[scenario.name].changed = changed;
       scenarios[scenario.name].version = scenario.data.version;      
     }
   }
 
   checkTaskVersion(){    
     this.dataService.getData(this.configure.task_job+'/api/json').subscribe((data)=>{
-      if(!data.buildable){
+      if(data.lastBuild.number > data.lastCompletedBuild.number){
         setTimeout(this.checkTaskVersion.bind(this),5000);
       }else{
-        if(data.task_build > this.task_build){
+        if(data.lastCompletedBuild.number > this.task_build){
+          if (this.update_changes){
+            window.location.reload();
+          }          
           this.dataService.getData(this.configure.task_job+'/tasks/tasks.json').subscribe((data)=>{
             this.updateJiras(data.jiras);
             this.updateTasks(data.tasks);
-            this.task_build = data.task_build;    
-            this.is_processing = false;    
+            this.task_build = data.task_build;             
+            this.submitTasks();   
           })
-        }
-  
+        }else{
+          this.submitTasks();
+        }        
       }
     })
       
+  }
+  submitTasks(){
+    if (this.submit){
+      var totalChange = this.jiraChanges + this.taskChanges;
+      if(totalChange > 0){
+        var conflicts_number = 0;
+        if (this.conflict_changes.length > 0){          
+          for (let conflict_change of this.conflict_changes){
+            conflicts_number += conflict_change.length;
+          }
+        }
+        if (conflicts_number > 0){
+          var dialogRef = this.dialog.open(DialogChangeDialog,{data:this.conflict_changes});
+          dialogRef.afterClosed().subscribe((result)=>{
+            if(result){
+              this.updateChanges();
+            }else{
+              this.is_processing = false;
+            }
+          })      
+        }else{
+          this.updateChanges();
+        }
+      }
+      this.submit = false;
+    }else{
+      this.is_processing = false;    
+    }
+
   }
   enableJiraSummary(){
     if(this.jira){
@@ -1209,9 +1264,10 @@ export class AppComponent implements OnInit {
     }
   }
   manageSwitch(){
+    this.checkBuild();
     if (!this.frontend.is_managed){
       this.frontend.is_managed = true;
-      this.frontend.show_management ="Hide Management";
+      this.frontend.show_management ="Hide Management";      
     }else{
       this.frontend.is_managed = false;
       this.frontend.show_management ="Management";
@@ -1220,13 +1276,13 @@ export class AppComponent implements OnInit {
   addComment(){    
     if (!this.frontend.node.data.new_comment){
       this.frontend.node.data.new_comment = {"user":this.user}
-    }
-    this.assignSelf();
+    }    
     this.frontend.node.data.new_comment.is_monitored = this.frontend.node.data.temp_comment.is_monitored;
     this.frontend.node.data.new_comment.content = this.frontend.node.data.temp_comment.content;    
     var tzoffset = (new Date()).getTimezoneOffset() * 60000;
     var localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, -1);
     this.frontend.node.data.new_comment.datetime = localISOTime.replace("T", " ");
+    this.assignSelf();
   }
   removeComment(){
     if (this.frontend.node.data.new_comment){
@@ -1377,7 +1433,7 @@ export class AppComponent implements OnInit {
     }
     
     for (let task of tasks){
-      if (task.name == owner_name){
+      if (task.name == owner_name){        
         if (!task.data.scenario_list){
           task.data.scenario_list = [];
           for (let item of task.children){
@@ -1390,13 +1446,15 @@ export class AppComponent implements OnInit {
           task.data.scenario_list.push(scenario_data.name)
           if (scenario_data.data.jiras){
             for(let jira of scenario_data.data.jiras){
-              if (!(jira in task.data.jiras)){
+              if (task.data.jiras.indexOf(jira) < 0){
                 task.data.jiras.push(jira);
               }
             }
-          }  
+          } 
+          var new_task:TestNode ={name:task.name,children:task.children,data:task.data};
+          tasks = tasks.map((t:TestNode)=>t.name !== task.name? t:new_task) 
         }
-        return;
+        return tasks;
       }
     }
 
@@ -1410,7 +1468,7 @@ export class AppComponent implements OnInit {
       }      
     }
     tasks.push(owner);
-    return;
+    return tasks;
 
   }
   showTask(node:any){
@@ -1477,6 +1535,40 @@ export class AppComponent implements OnInit {
     }else{
       this.assignTask("Unsigned");
     }
+    this.updateTaskChanges();
+  }
+
+  updateTaskChanges(){
+    var changes = 0;    
+    for (let env of this.data){
+      for (let task_data of env.perspectives[3].data.data){
+        var task_changes = 0
+        if (task_data.data.changes.length + task_data.data.removed.length > 0){
+          task_changes += task_data.data.changes.length + task_data.data.removed.length;          
+        }        
+        for (let scenario of task_data.children){
+          if (task_data.data.scenario_list.indexOf(scenario.name) >=0 && scenario.data.new_comment && scenario.data.new_comment.user){
+            task_changes++
+          }
+        }  
+        task_data.data.task_changes = task_changes;
+        changes += task_changes;
+      }
+    }
+    this.taskChanges = changes;    
+    console.log(this.taskChanges);
+
+  }
+
+  getShortName(name:string){
+    if (name){
+      var short_name:string = "";
+      for (let item of name.split(" ")){
+        short_name += item[0];
+      }
+      return short_name.toUpperCase();  
+    }
+    return "";
   }
 
   assignTask(owner:any){
@@ -1561,13 +1653,18 @@ export class AppComponent implements OnInit {
     for (let scenario of task.data.changes){
       task_scenario_list.push(scenario.name);
     }
-    task_scenario_list = task_scenario_list.filter((item:any)=>!(item.name in task.data.removed))
+    var task_removed_list:any = [];
+    for (let scenario of task.data.removed){
+      task_removed_list.push(scenario.name);
+    }
+
+    task_scenario_list = task_scenario_list.filter((item:any)=>task_removed_list.indexOf(item.name) < 0)
 
     if (scenario_data.data.jiras){
       var removed_jiras:any[] = []
       for(let jira of scenario_data.data.jiras){
         var case_data:any = null;
-        for(let ticket of this.data[this.selectIndex].perspectives[2].data._data._value){
+        for(let ticket of this.data[this.selectIndex].perspectives[2].data.data){
           if (ticket.name ==jira){
             case_data = ticket;
             break;
@@ -1581,7 +1678,11 @@ export class AppComponent implements OnInit {
           for (let scenario of case_data.data.changes){
             scenario_list.push(scenario.name);
           }
-          scenario_list = scenario_list.filter((item:any)=>!(item.name in case_data.data.removed))
+          var removed_list:any = [];
+          for (let scenario of case_data.data.removed){
+            removed_list.push(scenario.name);
+          }
+          scenario_list = scenario_list.filter((item:any)=>removed_list.indexOf(item.name) < 0)
           scenario_list = scenario_list.filter((item:any)=>(item.name in task_scenario_list))
           if(scenario_list.length == 0){
             removed_jiras.push(case_data.name)
@@ -1589,7 +1690,7 @@ export class AppComponent implements OnInit {
         }
       }
       if (removed_jiras.length > 0){
-        task.data.jiras = task.data.jiras.filter((item:any) => (item in removed_jiras));
+        task.data.jiras = task.data.jiras.filter((item:any) => (removed_jiras.indexOf(item) >= 0));
       }
     }
 
@@ -1662,7 +1763,7 @@ export class AppComponent implements OnInit {
       this.jira = jira.previous;
       this.new_jira = null;
     }else{
-      var vers = this.data[this.selectIndex].version.split(".")
+      var vers = this.data[this.selectIndex].version.split(".")      
       jira.version = vers[0] + "." + vers[1];
       if (jira.is_new){
         var i = 1;
@@ -1772,10 +1873,26 @@ export class AppComponent implements OnInit {
             }
   
         }
-      }else{
-        if(this.new_jira.id && this.new_jira.summary && this.new_jira.id?.length >0 && this.new_jira.summary?.length > 0){
-          return true;
-        }
+      }else{ 
+        if (this.new_jira && this.new_jira.id){
+          var items = this.new_jira.id.split("-");
+          if (items.length != 2){
+            this.new_jira.error = "Jira ID format is invalid!";
+            return false; 
+          }
+          if (this.configure.projects.indexOf(items[0].toUpperCase()) < 0){
+            this.new_jira.error = "Jira project must be one of projects : "  + this.configure.projects.join(",") +"!";
+            return false;          
+          }
+          if (!/^\d+$/.test(items[1])){
+            this.new_jira.error = "Jira id must be a number!";
+            return false;          
+          }
+          this.new_jira.error="";
+          if(this.new_jira.id && this.new_jira.summary && this.new_jira.id?.length >0 && this.new_jira.summary?.length > 0){
+            return true;
+          }    
+        }       
       }      
     }
     return false;
