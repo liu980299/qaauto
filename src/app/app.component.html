@@ -26,7 +26,7 @@
 <h1 style="padding-top: 10px;" > Portal QA Auto Test Workspace</h1>
 <h3>welcome!<b *ngIf="user && user.username">{{user.username}}</b></h3>
 </div>
-
+<div *ngIf="error_message" style="color:red">{{error_message}}</div>
 <as-split direction="horizontal" [restrictMove]="true" [useTransition]="true" *ngIf="initialized" style="height:88%;border:solid">
   <as-split-area [size]="20">
     <mat-tab-group (selectedIndexChange)="changeEnv($event)" [selectedIndex]="selectIndex">
@@ -46,7 +46,7 @@
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
-            <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unsigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>            
+            <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unassigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>            
             <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0))"
             [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && !node.data.is_new"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
@@ -174,11 +174,9 @@
         <canvas
           baseChart
           style="margin:auto;width:100%;height:80%"
-          [type]="'line'"
-          [data]="lineChartData"
-          [options]="lineChartOptions"
-          [legend]="lineChartLegend"
-        >
+          [data]="barChartData"          
+          [options]="barChartOptions"                    
+          [plugins]="barChartPlugins"        >
         </canvas>
       </div>
       <div style="display: block;height: 100%;" *ngIf="data_type=='tasks'">
@@ -186,7 +184,7 @@
           <mat-tab>
             <h2>{{task.name}}</h2>
             <h3 *ngIf="task.jiras && task.jiras.length > 0">Total {{task.jiras.length}} still open Jiras found by automation</h3>
-            <h3>Total {{task.scenario_list.length - task.removed.length}} scenarios have been assigned</h3>        
+            <h3>Total {{task.scenario_list.length - task.removed.length}} scenarios</h3>        
             <h3 *ngIf="task.passed_jiras && task.passed_jiras.length > 0">Total {{task.passed_jiras.length}} jiras have been passed the auto test and probably could be marked as verified</h3>
             <h3 *ngIf="task.removed_scenarios">The tests for {{task.removed_scenarios.length}} scenarios have been moved out of daily auto test</h3>
             
@@ -194,7 +192,7 @@
               <ng-container matColumnDef="scenario">
                 <th mat-header-cell *matHeaderCellDef>SCENARIO</th>
                 
-                <td mat-cell *matCellDef="let element"><a href="{{element.url}}" target="_blank">{{element.name}}</a> </td>            
+                <td mat-cell *matCellDef="let element"><a href="{{element.scenario_url}}" target="_blank">{{element.name}}</a> </td>            
               </ng-container>
               <ng-container matColumnDef="jiras">
                 <th mat-header-cell *matHeaderCellDef>JIRA ID</th>
@@ -353,7 +351,7 @@
       </mat-tab> 
       </mat-tab-group>  
       </div>
-
+      <H2 *ngIf="data_type=='summary'" class="jira">Congratulation! All tests passed in job {{frontend.name}}</H2>
       <div style="display: block;height: 100%;" *ngIf="data_type=='timeline'">
         <mat-accordion multi *ngFor="let container of data[selectIndex].timelines.containers">
           
@@ -389,24 +387,14 @@
             <button mat-raised-button (click)="gotoError()" color="primary" style="margin-left: 10px;">Error Step</button>
             <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;" >{{frontend.show_log}}</button>
             <button mat-raised-button (click)="manageSwitch()" color="primary" style="margin-left: 10px;" [disabled]="!last_build">{{frontend.show_management}}</button>
+            <button mat-raised-button (click)="historySwitch()" color="primary" style="margin-left: 10px;" *ngIf="frontend.node.data.history">{{frontend.show_history}}</button>
             
-           </div>           
+           </div>            
            <h3><a [href]="frontend.screenshots_url" target="_blank" *ngIf="frontend.screenshots_url" class="button">Download Screenshots Archive</a></h3> 
            <h3 *ngIf="frontend.node.data.last_success_test">
               <a [href]="frontend.node.data.last_success_test.url" target="_blank">The last successful test was performed {{frontend.node.data.last_success_test.test_time}}
                  with Portal version {{frontend.node.data.last_success_test.version}}</a>
               </h3>
-              <div *ngIf="frontend.node.data.comments">
-                <mat-card *ngFor="let comment of frontend.node.data.comments" style="border:solid 1px black;">
-                  <mat-card-header> 
-                    <mat-card-title>
-                      {{comment.user}}        
-                    </mat-card-title>
-                    <mat-card-subtitle><h3><b>{{comment.datatime}}</b></h3></mat-card-subtitle>                  
-                  </mat-card-header>
-                  <mat-card-content>{{comment.content}}</mat-card-content>
-                </mat-card>
-              </div>
               
     
           <h3 *ngIf="frontend.node.data.jiras.length - frontend.node.data.removed.length > 0">Jira:
@@ -416,8 +404,21 @@
             </li>
             </div>
           </h3>
-          <div *ngIf="frontend.is_managed">
-          <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Add to Jira</button>            
+          <div *ngIf="frontend.showHistory">
+            <li *ngFor="let item of frontend.node.data.history"><a  [href]="item.url" target="_blank">{{item.date}}({{item.version}}):{{item.failed_step}}</a></li>
+          </div>
+          <div *ngIf="frontend.is_managed&&last_build">
+            <div *ngIf="frontend.node.data.comments">
+              <mat-card  style="border:solid 1px black;">
+                <mat-card-header> 
+                  <mat-card-title>                    
+                    Comments
+                  </mat-card-title>                  
+                </mat-card-header>
+                <mat-card-content *ngFor="let comment of frontend.node.data.comments">{{comment.user.username}}({{comment.datetime}}):{{comment.content}}</mat-card-content>
+              </mat-card>
+            </div>          
+          <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Link to a Jira in Wiki</button>            
           <mat-menu #menu="matMenu">
             <button mat-menu-item (click)="assignJira()" class="menu-item" >Add a Jira</button>
             <div *ngFor="let jira of data[selectIndex].jiras" >
@@ -430,16 +431,17 @@
             <textarea matInput [(ngModel)]="frontend.node.data.temp_comment.content" [required]="frontend.node.data.temp_comment.is_monitored"></textarea>
           </mat-form-field>            
           <mat-checkbox [(ngModel)]="frontend.node.data.temp_comment.is_monitored"><b>Put in Monitor</b></mat-checkbox>
-          <button mat-raised-button color="primary" style="margin-left: 10%;" (click)="addComment()" [disabled]="!frontend.node.data.temp_comment.content||frontend.node.data.temp_comment.content < 2
+          <button mat-raised-button color="primary" style="margin-left: 10%;" (click)="addComment(true)" [disabled]="(frontend.node.data.temp_comment.content&&frontend.node.data.temp_comment.content.length < 2)
           ||(frontend.node.data.new_comment&&frontend.node.data.new_comment.content==frontend.node.data.temp_comment.content&&
-          frontend.node.data.new_comment.is_monitored==frontend.node.data.temp_comment.is_monitored)">Save</button>
+          !frontend.node.data.new_comment.is_monitored==!frontend.node.data.temp_comment.is_monitored)||
+          (!frontend.node.new_comment&&!frontend.node.data.temp_comment.content&&!frontend.node.data.temp_comment.is_monitored==!frontend.node.data.is_monitored)">Save</button>
           <button mat-raised-button color="primary" style="margin-left: 10px;" (click)="removeComment()" [disabled]="!frontend.node.data.new_comment">Delete</button>
 
 
-          <h3 [ngClass]="{'warn':!frontend.node.data.assigned||frontend.node.data.assigned=='Unsigned','jira':frontend.node.data.assigned&&frontend.node.data.assigned!='Unsigned'}"><span *ngIf="frontend.node.data.owner"> Suggested owner : {{frontend.owner.user}} ( feature : {{frontend.node.data.feature_file}}). </span>
-            <span *ngIf="frontend.node.data.assigned && frontend.node.data.assigned!='Unsigned'"> Currently it is assigned to {{frontend.node.data.assigned}} </span>
-            <span *ngIf="!frontend.node.data.assigned||frontend.node.data.assigned=='Unsigned'"> Currently it is not assigned !</span>            
-            <button mat-raised-button color="primary" style="margin-left: 10%;"  [matMenuTriggerFor]="ownerMenu">Assign Task</button></h3>
+          <h3 [ngClass]="{'warn':!frontend.node.data.assigned||frontend.node.data.assigned=='Unassigned','jira':frontend.node.data.assigned&&frontend.node.data.assigned!='Unassigned'}"><span *ngIf="frontend.node.data.owner"> Suggested owner : {{frontend.owner.user}} ( feature : {{frontend.node.data.feature_file}}). </span>
+            <span *ngIf="frontend.node.data.assigned && frontend.node.data.assigned!='Unassigned'"> Currently it is assigned to {{frontend.node.data.assigned}} </span>
+            <span *ngIf="!frontend.node.data.assigned||frontend.node.data.assigned=='Unassigned'"> Currently it is not assigned !</span>            
+            <button mat-raised-button color="primary" style="margin-left: 10%;"  [matMenuTriggerFor]="ownerMenu">Assign and Notify in Teams</button></h3>
             <mat-menu #ownerMenu="matMenu">
               <div *ngFor="let owner of owner_list" >
               <button mat-menu-item (click)="assignTask(owner)" class="menu-item" *ngIf="!(frontend.node.data.assigned&&owner==frontend.node.data.assigned)" >{{owner}}</button>              
@@ -488,4 +490,3 @@
 
 </as-split>
 <button mat-raised-button [disabled] = "jiraChanges+taskChanges==0 || is_processing ||!last_build" color="primary" (click)="submitChanges()">Submit</button><span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span><span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>
-<div *ngIf="error_message" style="color:red">{{error_message}}</div>

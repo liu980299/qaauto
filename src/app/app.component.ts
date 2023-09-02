@@ -51,7 +51,7 @@ export class MyErrorStateMatcher implements ErrorStateMatcher {
 export class AppComponent implements OnInit {
   
   @ViewChild(BaseChartDirective)
-  
+  barChartType:ChartType = 'bar';
   public chart: BaseChartDirective | undefined;
   accountCtrl = new FormControl('');
   filteredAccounts: Observable<string[]>;
@@ -65,10 +65,11 @@ export class AppComponent implements OnInit {
   submit = false;
   update_changes = false;
   treeControl = new NestedTreeControl<TestNode>(node => node.children);
-  public lineChartData: ChartConfiguration<'line'>['data'] ={labels:[],datasets:[],
+  barChartPlugins = [];
+  public barChartData: ChartConfiguration<'bar'>['data'] ={labels:[],datasets:[],
 
   };
-  public lineChartOptions: ChartOptions<'line'> = {
+  public barChartOptions: ChartOptions<'bar'> = {
     responsive: true
   };
   frontend:any;
@@ -98,9 +99,10 @@ export class AppComponent implements OnInit {
   task:any;
   owners:any;
   new_jira:any;
-  owner_list:any = [];
+  owner_list:any = ["Unassigned"];
+  users:any = {};
   error_message = "";
-  last_build = false;
+  last_build = true;
   job_url = "";
   
   constructor(public dialog:MatDialog, private dataService: DataService,private _renderer2: Renderer2
@@ -158,7 +160,7 @@ export class AppComponent implements OnInit {
         var tests:TestNode[] = [];
         var pages:TestNode[] = [];
         var cases:TestNode[] = [];
-        var tasks:TestNode[] = [];
+        var tasks:TestNode[] = [{name:"Unassigned task",children:[],data:{scenarios:[],removed:[],changes:[],jiras:[],scenario_list:[],type:"tasks"}}];
         var passed_jiras = 0;
         var moved_jiras = 0;
         var scenarios:any = {};
@@ -166,9 +168,11 @@ export class AppComponent implements OnInit {
         var start_test = new Date(data[key].start_time);
         if (data[key].owners){
           for (let owner in data[key].owners){
+            var user = data[key].owners[owner];
             if (!(this.owners[owner])){
               this.owners[owner] = data[key].owners[owner];
               this.owner_list.push(data[key].owners[owner].user);
+              this.users[user.email] = user;
             }
           }
         }
@@ -221,7 +225,7 @@ export class AppComponent implements OnInit {
                   }else{
                     scenario_data.data.error = true;
                   }
-                  if (this.test_id != "" && scenario_data.data.url.indexOf(this.test_id) > 0){
+                  if (this.test_id != "" && scenario_data.data.url.indexOf(this.test_id + ".") > 0){
                     expand_nodes["feature"] = feature_data;
                     expand_nodes["job"] = job_data;                                                            
                   }
@@ -233,10 +237,8 @@ export class AppComponent implements OnInit {
                     scenario_data.data.jiras = scenario_data.data.JIRA.split(",");
                   }
                   scenarios[scenario] = scenario_data;
-                  scenario_data.data.case_list = cases;
-                  if(scenario_data.data.assigned){
-                      tasks = this.setTask(tasks,scenario_data);
-                  }
+                  scenario_data.data.case_list = cases;                  
+                  tasks = this.setTask(tasks,scenario_data);                  
                   for (let jira of data[key].jiras){
                     if (scenario_data.data.JIRA && scenario_data.data.JIRA.indexOf(jira.id) >= 0){
                       for (let case_item of cases){
@@ -317,9 +319,13 @@ export class AppComponent implements OnInit {
               }
             }
             if (container.length == 10){
-              timeline.name = container.substring(0,9) + '0' + container[9];
+              timeline.name = container.substring(0,9) + '00' + container[9];
             }else{
-              timeline.name = container;
+              if (container.length == 11){
+                timeline.name = container.substring(0,9) + '0' +  container.substring(9);
+              }else{
+                timeline.name = container;
+              }              
             }           
             
             timelines.push(timeline);
@@ -381,6 +387,7 @@ export class AppComponent implements OnInit {
         this.is_processing = data.inProcess||data.building;
         if (data.result != "SUCCESS"){
           this.error_message = "Management jenkins job got some issue. Please contact admin!";
+          this.last_build = false;
           return
         }
         if(this.is_processing){
@@ -412,23 +419,38 @@ export class AppComponent implements OnInit {
       for (let envData of this.data){ 
         var version = envData.version.split(".").splice(0,2).join(".");       
         if (version in tasks){
-          var task_nodes = envData.perspectives[3].data.data;
+          var task_nodes = [{name:"Unassigned task",children:[],data:{scenarios:[],removed:[],changes:[],jiras:[],scenario_list:[],type:"tasks"}}];
           var task_list = tasks[version];
           var scenarios:any = [];
+          var sceranio_name_list = [];
           for (let task of task_list){
             for(let scenario in task.scenarios){
               
               if (scenario in envData.scenarios){
                 var scenario_obj = task.scenarios[scenario]
                 var scenario_data = envData.scenarios[scenario];
-                scenario_data.data.comments = scenario_obj.comments;
+                scenario_data.data.comments = scenario_obj.comments;                
+                if (scenario_obj.history){
+                  scenario_data.data.history = scenario_obj.history;
+                  scenario_data.data.is_monitored = true;
+                  if (scenario_data.data.temp_comment){
+                    scenario_data.data.temp_comment.is_monitored = true;
+                  }
+                }                
                 scenario_data.data.assigned = task.owner;                
                 scenarios.push(scenario_data)
+                sceranio_name_list.push(scenario);
               }
             }          
-          }
+          }          
           for (let scenario of scenarios){
             task_nodes = this.setTask(task_nodes,scenario);
+          }
+          for (let scenario in envData.scenarios){
+            if(sceranio_name_list.indexOf(scenario) < 0){
+              envData.scenarios[scenario].assigned = "Unassigned";
+              task_nodes = this.setTask(task_nodes,envData.scenarios[scenario]);
+            }
           }
           envData.perspectives[3].data.data = task_nodes;
         }
@@ -483,6 +505,10 @@ export class AppComponent implements OnInit {
     for (let envData of this.data){      
       var jira_nodes:TestNode[] = [];
       envData.jiras = jiras.filter((item:any)=>item.version<=envData.version)
+      var jira_id_list:any= [];
+      for (let a_jira of envData.jiras){
+        jira_id_list.push(a_jira.id);
+      }
       var jira_list = envData.perspectives[2].data.data;  
       var jira_ids:any = [];
       for (let jira of jiras){
@@ -535,6 +561,13 @@ export class AppComponent implements OnInit {
               
             }
             
+        }
+      }
+      var removed_cases = jira_list.filter((item:any)=>jira_id_list.indexOf(item.data.id)<0)
+      for (let removed_case of removed_cases){
+        var index = jira_list.indexOf(removed_case);
+        if (index >=0){
+          jira_list.splice(index,1);
         }
       }
       var new_jiras = jiras.filter((item:any)=>jira_ids.indexOf(item.id)<0 && item.version <= envData.version);
@@ -619,6 +652,14 @@ export class AppComponent implements OnInit {
             }
           }else{
             jira.version = envData.summary["PORTAL VERSION"];
+            if (case_data.data.is_new){
+              jira.project = case_data.data.project;
+              jira.team = case_data.data.team;
+              jira.summary = case_data.data.summary;
+              jira.description = case_data.data.description;
+              jira.steps = case_data.data.steps;
+              jira.is_new = true;
+            }
             jira.scenarios = [];
             for (let scenario_data of case_data.data.scenarios){
               if (case_data.data.removed.indexOf(scenario_data.name) < 0 ){
@@ -638,31 +679,34 @@ export class AppComponent implements OnInit {
       }
       
       for (let task_data of envData.perspectives[3].data.data){
-        var item:any = {scenarios:{}};
-        item["env"] = envData.name
-        var remove_list = [];
-        if (task_data.data.removed){
-          for (let removed_item of task_data.data.removed){
-            remove_list.push(removed_item.name);
+        if (task_data.name != "Unassigned task"){
+          var item:any = {scenarios:{}};
+          var start_date = envData.start_time.split("T")[0];
+          item["env"] = envData.name
+          var remove_list = [];
+          if (task_data.data.removed){
+            for (let removed_item of task_data.data.removed){
+              remove_list.push(removed_item.name);
+            }
           }
-        }
-        for (let key in task_data.data){
-          if (task_queue.indexOf(key) < 0){
-            item[key] = task_data.data[key];
-          }else{
-            for (let scenario of task_data.data.scenarios){
-              if (remove_list.indexOf(scenario.name) < 0){
-                this.setTaskScenario(item.scenarios,scenario,false);
+          for (let key in task_data.data){
+            if (task_queue.indexOf(key) < 0){
+              item[key] = task_data.data[key];
+            }else{
+              for (let scenario of task_data.data.scenarios){
+                if (remove_list.indexOf(scenario.name) < 0){
+                  this.setTaskScenario(item.scenarios,scenario,false,start_date);
+                }
               }
-            }
-            for(let scenario of task_data.data.changes){
-              item.changed = true;
-              this.setTaskScenario(item.scenarios,scenario,true);
-
-            }
+              for(let scenario of task_data.data.changes){
+                item.changed = true;
+                this.setTaskScenario(item.scenarios,scenario,true,start_date);
+  
+              }
+            }  
           }
-        }
-        changes.tasks[version].push(item);
+          changes.tasks[version].push(item);
+        }        
       }
     }
       if (this.user){
@@ -684,13 +728,14 @@ export class AppComponent implements OnInit {
       }
       console.log(changes);  
   }
-  setTaskScenario(scenarios:any,scenario:any,changed:boolean){
+  setTaskScenario(scenarios:any,scenario:any,changed:boolean,test_date:string){
     if (!(scenario.name in scenarios)){
       scenarios[scenario.name] = {}      
       scenarios[scenario.name].is_monitored=scenario.data.is_monitored;
-      scenarios[scenario.name].comments=scenario.data.comments;
+      scenarios[scenario.name].comments=scenario.data.comments;      
       scenarios[scenario.name].new_comment = scenario.data.new_comment;
       scenarios[scenario.name].failed_step = scenario.data.failed_step;
+      scenarios[scenario.name].date = test_date;
       scenarios[scenario.name].url = scenario.data.scenario_url;
       scenarios[scenario.name].work_url = report_url + "#" + scenario.data.url.split("/")[1].split(".")[0];
       scenarios[scenario.name].changed = changed;
@@ -973,14 +1018,14 @@ export class AppComponent implements OnInit {
     var env_data=this.data[this.selectIndex];
     this.data_type = "report";
     this.report_name = "containers running duration chart";      
-    this.lineChartData.labels = [];
-    this.lineChartData.datasets = [];
+    this.barChartData.labels = [];
+    this.barChartData.datasets = [];
     this.headers = env_data.timelines.headers;      
     var color = 'black';
     var end_times = [];
     for (let item of env_data.timelines.containers){
       var start_time = new Date(item.start_time);
-      this.lineChartData.labels.push(item.name);
+      this.barChartData.labels.push(item.name);
       if (item.color){
         color = item.color;
       }
@@ -992,12 +1037,12 @@ export class AppComponent implements OnInit {
     }
     var dataset = {data:end_times,
       label: "Duration (mins)",
-      fill: false,
+      fill: true,
       tension: 0,
       borderColor: color,
-      backgroundColor: 'rgba(255,0,0,0.3)'
+      backgroundColor: 'blue'
     }
-    this.lineChartData.datasets=[dataset]
+    this.barChartData.datasets=[dataset]
     console.log(this.chart);      
     this.updateReportChart();
     this.datasources=env_data.timelines.containers;
@@ -1022,7 +1067,7 @@ export class AppComponent implements OnInit {
         for (let job of auto_test.children){
           for(let feature of job.children){
             for(let scenario of feature.children){
-              if (scenario.data.url.indexOf(this.test_id) > 0){                
+              if (scenario.data.url.indexOf(this.test_id + ".") > 0){                
                 this.treeControl.expand(auto_test);
                 this.treeControl.expand(job);
                 this.treeControl.expand(feature);
@@ -1069,20 +1114,26 @@ export class AppComponent implements OnInit {
   selectNode(node:any){
     this.clearNodes();
     console.log(node);
+    if (!node.data){
+      this.data_type = "summary";
+      this.frontend = {}
+      this.frontend.name = node.name;
+      return;
+    }
     node.data.selected=true;
     var test_data = [];
     if (node.data.type && node.data.type == 'report'){
       this.data_type = 'report';      
       this.report_name = node.data.report_name + " - " + node.name;      
-      this.lineChartData.labels = [];
-      this.lineChartData.datasets = [];
+      this.barChartData.labels = [];
+      this.barChartData.datasets = [];
       this.headers = [];
       for (let key in node.data.data[0]){
         this.headers.push(key);
       }
       var color = 'black';
       for (let item of node.data.data){
-        this.lineChartData.labels.push(item.build);
+        this.barChartData.labels.push(item.build);
         if (item.color){
           color = item.color;
         }
@@ -1095,7 +1146,7 @@ export class AppComponent implements OnInit {
         borderColor: color,
         backgroundColor: 'rgba(255,0,0,0.3)'
       }
-      this.lineChartData.datasets=[dataset]
+      this.barChartData.datasets=[dataset]
       console.log(this.chart);      
       this.updateReportChart();
       this.datasources=node.data.data;
@@ -1104,7 +1155,9 @@ export class AppComponent implements OnInit {
       this.new_jira = null;
       this.jira = node;
       console.log(this.jira);
-    }
+    }else if(node.data.type && node.data.type == 'tasks'){
+      this.showTask(node);
+    } 
     else{
       this.data_type = 'test';
       var id_names= node.data.url.split("/");
@@ -1193,6 +1246,7 @@ export class AppComponent implements OnInit {
         // this.frontend.jiras = node.data.jiras;
         this.frontend.show_log = "Show Log";
         this.frontend.show_management = "Management";
+        this.frontend.show_history = "History";
         if (node.data.owner){
           this.frontend.owner = this.owners[node.data.owner];          
         }
@@ -1202,11 +1256,10 @@ export class AppComponent implements OnInit {
         this.frontend.node = node;
         if (!this.frontend.node.data.temp_comment){
           this.frontend.node.data.temp_comment ={};
-          if (this.frontend.node.data.is_monitored){
-            this.frontend.node.data.temp_comment.is_monitored = this.frontend.node.data.is_monitored;
-          }
         }
-        
+        if (this.frontend.node.data.is_monitored){
+          this.frontend.node.data.temp_comment.is_monitored = this.frontend.node.data.is_monitored;
+        }      
         if (this.frontend.url){
           var path_items = this.frontend.url.split("//");
           var container_name = null;
@@ -1273,7 +1326,18 @@ export class AppComponent implements OnInit {
       this.frontend.show_management ="Management";
     }
   }
-  addComment(){    
+  historySwitch(){
+
+    if (!this.frontend.showHistory){
+      this.frontend.showHistory = true;
+      this.frontend.show_history ="Hide History";      
+    }else{
+      this.frontend.showHistory = false;
+      this.frontend.show_history ="History";
+    }
+  }
+
+  addComment(assignTask:boolean){    
     if (!this.frontend.node.data.new_comment){
       this.frontend.node.data.new_comment = {"user":this.user}
     }    
@@ -1282,7 +1346,12 @@ export class AppComponent implements OnInit {
     var tzoffset = (new Date()).getTimezoneOffset() * 60000;
     var localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, -1);
     this.frontend.node.data.new_comment.datetime = localISOTime.replace("T", " ");
-    this.assignSelf();
+    if (!this.frontend.node.data.assigned||this.frontend.node.data.assigned=="Unassigned"){
+      if(assignTask){
+        this.assignSelf();
+      }      
+    }
+    this.updateTaskChanges();    
   }
   removeComment(){
     if (this.frontend.node.data.new_comment){
@@ -1315,37 +1384,37 @@ export class AppComponent implements OnInit {
     this.report_name = this.summarys[this.selectIndex].name + " test report";
     var failed_data = [];
     var total_data = [];
-    this.lineChartData={labels:[],datasets:[]};
+    this.barChartData={labels:[],datasets:[]};
     this.headers=[];
     for (let column in summary.data[0]){
       this.headers.push(column);
     }
     this.datasources = summary.data;
     for (let item of summary.data){
-      this.lineChartData.labels?.push(item["Started on"])
+      this.barChartData.labels?.push(item["Started on"])
       failed_data.push(item.failed);
-      total_data.push(item.Scenarios)
+      total_data.push(item.Scenarios-item.failed)
     }
     var dataset = {data:failed_data,
       label: 'Failed Tests',
       fill: false,
       tension: 0,
-      borderColor: 'red',
-      backgroundColor: 'rgba(255,0,0,0.3)'
+      borderColor: 'black',
+      backgroundColor: 'red'
       }
     var totalset = {data:total_data,
-      label:"Total Tests",
+      label:"Passed Tests",
       fill: false,
       tension: 0,
       borderColor: 'black',
-      backgroundColor: 'rgba(255,0,0,0.3)'
+      backgroundColor: 'green'
 
     }
-    this.lineChartData.datasets = [dataset,totalset];
+    this.barChartData.datasets = [dataset,totalset];
     this.chart?.chart?.update();      
   }
   updateReportChart(){
-    this.lineChartOptions = {...this.lineChartOptions};
+    this.barChartOptions = {...this.barChartOptions};
   }
   clearNodes(){
     this.test_user_id = "";
@@ -1395,7 +1464,7 @@ export class AppComponent implements OnInit {
   }
   removeTask(tasks:any,scenario_data:any){
     var owner_name = scenario_data.data.assigned;
-    if (scenario_data.data.assigned.indexOf(" ")<0){
+    if (scenario_data.data.assigned.indexOf(" ")<0 && scenario_data.data.assigned in this.owners){
       owner_name = this.owners[scenario_data.data.assigned].user;
       scenario_data.data.assigned = this.owners[scenario_data.data.assigned].user;
     }
@@ -1422,17 +1491,26 @@ export class AppComponent implements OnInit {
   }
 
   setTask(tasks:any,scenario_data:any){
+    if (!scenario_data.data.assigned){
+      scenario_data.data.assigned = "Unassigned";
+    }
     var owner_name = scenario_data.data.assigned;
-    if (scenario_data.data.assigned.indexOf(" ")<0){
+    if (scenario_data.data.assigned.indexOf(" ")<0 && scenario_data.data.assigned in this.owners){
       owner_name = this.owners[scenario_data.data.assigned].user;
       scenario_data.data.assigned = this.owners[scenario_data.data.assigned].user;
     }
-    owner_name +=  "'s task";
+    if (scenario_data.data.assigned == "Unassigned"){      
+      owner_name = "Unassigned task";
+    }else{
+      owner_name +=  "'s task";
+    }
+    
     if (scenario_data.data.assigned){
       this.removeTask(tasks,scenario_data);
     }
     
     for (let task of tasks){
+      task.data.type = "tasks"
       if (task.name == owner_name){        
         if (!task.data.scenario_list){
           task.data.scenario_list = [];
@@ -1458,7 +1536,7 @@ export class AppComponent implements OnInit {
       }
     }
 
-    var owner:TestNode = {name:owner_name,children:[scenario_data],data:{scenarios:[scenario_data],removed:[],changes:[],jiras:[],scenario_list:[scenario_data.name]}};
+    var owner:TestNode = {name:owner_name,children:[scenario_data],data:{scenarios:[scenario_data],removed:[],changes:[],jiras:[],scenario_list:[scenario_data.name],type:"tasks"}};
     owner.data.owner = scenario_data.data.assigned;
     if (scenario_data.data.jiras){
       for (let jira of scenario_data.data.jiras){
@@ -1467,7 +1545,13 @@ export class AppComponent implements OnInit {
         }        
       }      
     }
-    tasks.push(owner);
+    //tasks.push(owner);
+    if (owner_name == "Unassigned task"){
+      tasks.push(owner);
+    }else{
+      tasks.splice(tasks.length - 1,0,owner);
+    }
+    
     return tasks;
 
   }
@@ -1484,23 +1568,31 @@ export class AppComponent implements OnInit {
       var item:any = {};
       item.name = scenario.name;
       item.url = scenario.data.url;
+      item.scenario_url = scenario.data.scenario_url;
       item.jiras = scenario.data.jiras;
       item.new_comment = scenario.data.new_comment;
       item.comments = scenario.data.comments;
+      item.status = "Unassigned";
+      if (item.owner && item.owner != "Unassigned"){
+        item.status = "Assigned";
+      }
 
-      if (item.jiras){
+      if (item.jiras&&item.jiras.length > 0){
         item.status = "checked";
       }
       if (scenario.data.is_monitored){
         item.status = "monitored";
       }
       for (let removed_item of node.data.removed){
-        if (removed_item.name == scenario){
+        if (removed_item.name == scenario.name){
           item.status = "removed";
           break;
         }
       }
-      this.task.scenario_list.push(item);
+      if (item.status != "removed"){
+        this.task.scenario_list.push(item);
+      }
+      
     }
     for (let scenario of node.data.changes){
       var item:any = {};
@@ -1530,10 +1622,10 @@ export class AppComponent implements OnInit {
     }
   }
   assignSelf(){
-    if (this.user && this.user.id in this.owners){      
-      this.assignTask(this.owners[this.user.id].user);
+    if (this.user && this.user.email in this.users){      
+      this.assignTask(this.users[this.user.email].user);
     }else{
-      this.assignTask("Unsigned");
+      this.assignTask("Unassigned");
     }
     this.updateTaskChanges();
   }
@@ -1543,16 +1635,18 @@ export class AppComponent implements OnInit {
     for (let env of this.data){
       for (let task_data of env.perspectives[3].data.data){
         var task_changes = 0
-        if (task_data.data.changes.length + task_data.data.removed.length > 0){
-          task_changes += task_data.data.changes.length + task_data.data.removed.length;          
-        }        
-        for (let scenario of task_data.children){
-          if (task_data.data.scenario_list.indexOf(scenario.name) >=0 && scenario.data.new_comment && scenario.data.new_comment.user){
-            task_changes++
-          }
-        }  
-        task_data.data.task_changes = task_changes;
-        changes += task_changes;
+        if (task_data.name != "Unassigned task"){          
+          if (task_data.data.changes.length + task_data.data.removed.length > 0){
+            task_changes += task_data.data.changes.length + task_data.data.removed.length;          
+          }        
+          for (let scenario of task_data.children){
+            if (task_data.data.scenario_list.indexOf(scenario.name) >=0 && scenario.data.new_comment && scenario.data.new_comment.user){
+              task_changes++
+            }
+          }  
+          task_data.data.task_changes = task_changes;
+          changes += task_changes;  
+        }
       }
     }
     this.taskChanges = changes;    
@@ -1574,8 +1668,8 @@ export class AppComponent implements OnInit {
   assignTask(owner:any){
     console.log(owner);
     var task_name = owner + "'s task";
-    if (owner == "Unsigned"){
-      task_name = "Unsigned task"
+    if (owner == "Unassigned"){
+      task_name = "Unassigned task"
     }
 
     
@@ -1615,7 +1709,7 @@ export class AppComponent implements OnInit {
           }
         }
         if (found){
-          srcTask.data.removed.push(scenario_data);
+          srcTask.data.removed.push(scenario_data);          
         }else{
           srcTask.data.changes = srcTask.data.changes.filter((item:TestNode)=>item.name!=scenario_data.name);
         }  
@@ -1623,7 +1717,7 @@ export class AppComponent implements OnInit {
           this.removeJiraTask(scenario_data,srcTask);
         }
       }
-      this.taskChanges += task.data.removed.length + task.data.changes.length;
+      // this.taskChanges += task.data.removed.length + task.data.changes.length;
     }    
     if (srcTask){
       var task:TestNode = {name:srcTask.name,children:srcTask.children,data:srcTask.data}
@@ -1632,15 +1726,18 @@ export class AppComponent implements OnInit {
     if (!dstTask){
       var task:TestNode = {name:task_name,children:[scenario_data],data:{scenarios:[],changes:[scenario_data],removed:[],jiras:[],scenario_list:[]}}
       task.data.owner = owner;
-      this.taskChanges++;
-      tasks.push(task);
+      // this.taskChanges++;
+      tasks.splice(tasks.length-1,0,task);
+      // tasks.push(task);
     }else{
       var task:TestNode = {name:dstTask.name,children:dstTask.children,data:dstTask.data}
       tasks = tasks.map((t:TestNode)=>t.name !== task.name? t:task)
     }
     this.data[this.selectIndex].perspectives[3].data.data = tasks ;
-    
-
+    if (this.frontend.node.data.temp_comment.content && this.frontend.node.data.temp_comment.content.trim().length > 0){
+      this.addComment(false);
+    }    
+    this.updateTaskChanges();
     return;
   }
 
