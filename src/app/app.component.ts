@@ -66,6 +66,7 @@ export class AppComponent implements OnInit {
   update_changes = false;
   treeControl = new NestedTreeControl<TestNode>(node => node.children);
   barChartPlugins = [];
+  jira_refs:any={};
   public barChartData: ChartConfiguration<'bar'>['data'] ={labels:[],datasets:[],
 
   };
@@ -89,7 +90,7 @@ export class AppComponent implements OnInit {
   jira_url = jira_url;
   headers:string[] = [];
   datasources:any;
-  jira_headers=["id","summary","scenarios","comment"];
+  jira_headers=["checked","id","summary","scenarios","comment"];
   task_headers =["scenario","jiras","status","comment"];
   configure:any;
   jira_index:any = {};
@@ -104,7 +105,8 @@ export class AppComponent implements OnInit {
   error_message = "";
   last_build = true;
   job_url = "";
-  
+  keepAlive:any;
+
   constructor(public dialog:MatDialog, private dataService: DataService,private _renderer2: Renderer2
     ){
       this.filteredAccounts = this.accountCtrl.valueChanges.pipe(
@@ -365,8 +367,21 @@ export class AppComponent implements OnInit {
       this.initialized = true;      
       document.getElementById("loading_mask")!.style.display = "none";  
       this.setReportData();    
+      this.setJiraRefs();
       this.fetchTasks();
-     });     
+     });    
+     this.keepAlive = setInterval(this.checkTaskVersion.bind(this),30000);
+  }
+
+  pass_test(node:any){
+    var failed_tests = 0
+    if (node.data.jira_ref){
+      for(let env_node of node.data.jira_ref){
+        failed_tests += env_node.scenarios.length + env_node.changes.length;
+      }
+      return failed_tests == 0;
+    }
+    return false;
   }
 
   checkBuild(){
@@ -477,16 +492,16 @@ export class AppComponent implements OnInit {
             if (scenario in envData.scenarios){
                 var scenario_dict = task.scenarios[scenario];
                 var scenario_data = envData.scenarios[scenario];
-                if (scenario_data.owner != scenario_dict.owner){
+                if (scenario_data.data.assigned != task.owner){
                   var change:any = {};
-                  change["src"] = scenario_data.owner;
-                  change["dst"] = scenario_dict.owner;
+                  change["src"] = scenario_data.data.owner;
+                  change["dst"] = task.owner;
                   change.env = envData.name;
                   change.scenario = scenario_data.name;
                   envData.changes.push(change)
                   
                 }
-                scenario_data.data.owner = scenario_dict.owner;
+                scenario_data.data.assigned = task.owner;
                 scenario_data.data.comments = scenario_dict.comments;
                 scenario_data.data.is_monitored = scenario_dict.is_monitored;
                 scenario_data.data.new_comment = {};
@@ -504,7 +519,7 @@ export class AppComponent implements OnInit {
   updateJiras(jiras:any){
     for (let envData of this.data){      
       var jira_nodes:TestNode[] = [];
-      envData.jiras = jiras.filter((item:any)=>item.version<=envData.version)
+      envData.jiras = jiras.filter((item:any)=>item.version.split(".").slice(0,2).join(".")<=envData.version)
       var jira_id_list:any= [];
       for (let a_jira of envData.jiras){
         jira_id_list.push(a_jira.id);
@@ -527,6 +542,9 @@ export class AppComponent implements OnInit {
                     var jira_index = scenario_data.data.jiras.indexOf(jira.id);
                     if (jira_index >=0){
                       scenario_data.data.jiras.splice(jira_index,1);
+                      if (scenario_data.data.jiras.length == 0){
+                        scenario_data.data.JIRA = null;
+                      }
                       scenario_data.data.removed = scenario_data.data.removed.filter((case_id:string)=>case_id!=jira.id);
                       scenario_data.data.changed = scenario_data.data.changes.filter((case_id:string)=>case_id!=jira.id);
                     }                    
@@ -541,8 +559,10 @@ export class AppComponent implements OnInit {
                 for (let scenario of change_list){
                   if (scenario.name in envData.scenarios){
                     case_data.data.scenarios.push(envData.scenarios[scenario.name]);
-                    envData.scenarios[scenario.name].data.changes = 
-                      envData.scenarios[scenario.name].data.changes.filter((item:string)=>item!=jira.id);
+                    if (envData.scenarios[scenario.name].data.jiras.indexOf(jira.id) < 0){                      
+                      envData.scenarios[scenario.name].data.jiras.push(jira.id);
+                      envData.scenarios[scenario.name].data.JIRA = envData.scenarios[scenario.name].data.jiras.join(",");
+                    }
                   }
                 }
                 case_data.data.changes = case_data.data.changes.filter((item:any)=>jira_scenarios.indexOf(item.name)<0);
@@ -550,12 +570,19 @@ export class AppComponent implements OnInit {
                 jira_nodes.push(case_data);
               }else{
                 for (let scenario_data of case_data.data.scenarios){
-                  scenario_data.data.jiras = scenario_data.data.jiras.filter((item:string)=>item!=jira.id);
-                  scenario_data.data.JIRA = scenario_data.data.jiras.join(",");
-                  scenario_data.data.removed = scenario_data.data.removed.filter((item:string)=>item!=jira.id);
+                  scenario_data.data.jiras = scenario_data.data.jiras.filter((item:string)=>jira_id_list.indexOf(item)>=0);
+                  if (scenario_data.data.jiras.length + scenario_data.data.changes.length == 0){
+                    scenario_data.data.JIRA = null
+                  }else{
+                    scenario_data.data.JIRA = scenario_data.data.jiras.join(",");
+                  }
+                  
+                  // scenario_data.data.removed = scenario_data.data.removed.filter((item:string)=>item!=jira.id);
+                  scenario_data.data.removed = [];
                 }
                 for (let scenario_data of case_data.data.changes){
-                  scenario_data.data.changes = scenario_data.data.changes.filter((item:string)=>item!=jira.id);
+                  // scenario_data.data.changes = scenario_data.data.changes.filter((item:string)=>item!=jira.id);
+                  scenario_data.data.changes = [];
                 }
               }
               
@@ -566,6 +593,14 @@ export class AppComponent implements OnInit {
       var removed_cases = jira_list.filter((item:any)=>jira_id_list.indexOf(item.data.id)<0)
       for (let removed_case of removed_cases){
         var index = jira_list.indexOf(removed_case);
+        for (let scenario_data of removed_case.data.scenarios){
+          scenario_data.data.jiras = scenario_data.data.jiras.filter((item:string)=>item!=removed_case.data.id);
+          if (scenario_data.data.jiras.length + scenario_data.data.changes.length== 0){
+            scenario_data.data.JIRA = null
+          }else{
+            scenario_data.data.JIRA = scenario_data.data.jiras.join(",");
+          }          
+        }
         if (index >=0){
           jira_list.splice(index,1);
         }
@@ -577,17 +612,33 @@ export class AppComponent implements OnInit {
           scenario_text:jira.scenario_text,passed_tests:jira.passed_tests
         }};          
         for (let scenario of jira.scenarios){
-          var scenario_data = envData.scenarios[scenario.name];
-          case_data.data.scenarios.push(scenario_data);
-          scenario_data.data.jiras.push(jira.id);
-          scenario_data.data.JIRA = scenario_data.data.jiras.join(",");
+          if (scenario.name in envData.scenarios){
+            var scenario_data = envData.scenarios[scenario.name];
+            case_data.data.scenarios.push(scenario_data);
+            scenario_data.data.jiras.push(jira.id);
+            scenario_data.data.JIRA = scenario_data.data.jiras.join(",");  
+          }
         }
         jira_list.push(case_data);
       }
       envData.perspectives[2].data.data = jira_list;
     }
     this.updateJiraChanges();
+    this.setJiraRefs();
+  }
 
+  setJiraRefs(){
+    this.jira_refs = {};
+    for (let envData of this.data){
+      for(let case_data of envData.perspectives[2].data.data){
+        if (!(case_data.data.id in this.jira_refs)){
+          this.jira_refs[case_data.data.id] = [case_data.data]
+        }else{
+          this.jira_refs[case_data.data.id].push(case_data.data)
+        }
+        case_data.data.jira_ref = this.jira_refs[case_data.data.id]
+      }
+    }
   }
   updateJiraChanges(){
     var changes = 0;
@@ -600,8 +651,14 @@ export class AppComponent implements OnInit {
         }        
       }
     }
+    for (let ticket in this.jira_refs){
+      if (this.jira_refs[ticket].length > 0 && this.jira_refs[ticket][0].set_pass){
+        this.jiraChanges++;    
+      }
+    }
     this.jiraChanges = changes;
     this.changedJiras = changedJiras;
+
     console.log(this.jiraChanges);
   }
   
@@ -672,6 +729,22 @@ export class AppComponent implements OnInit {
             changes.jiras.push(jira);
           }          
         }
+        else{
+          if (case_data.data.set_pass){
+            var jira:any = {id:case_data.data.id,pass_test:true,version:envData.summary["PORTAL VERSION"]};
+            var existing = false;
+            for (let ticket of changes.jiras){
+              if (ticket.id == jira.id){
+                jira = ticket;
+                existing = true;
+                break;
+              }
+            }
+            if (!existing){
+              changes.jiras.push(jira);
+            }                          
+          }
+        }
       }
       var version = this.getVersion(envData);
       if (!(version in changes.tasks)){
@@ -728,6 +801,18 @@ export class AppComponent implements OnInit {
       }
       console.log(changes);  
   }
+  set_pass_test(checked:boolean,node:any){
+    if (node.data.jira_ref){
+      for(let case_data of node.data.jira_ref){
+        case_data.set_pass = checked;
+      }
+      if (checked){
+        this.jiraChanges++;
+      }else{
+        this.jiraChanges--;
+      }
+    }
+  }
   setTaskScenario(scenarios:any,scenario:any,changed:boolean,test_date:string){
     if (!(scenario.name in scenarios)){
       scenarios[scenario.name] = {}      
@@ -743,13 +828,15 @@ export class AppComponent implements OnInit {
     }
   }
 
+
   checkTaskVersion(){    
     this.dataService.getData(this.configure.task_job+'/api/json').subscribe((data)=>{
       if(data.lastBuild.number > data.lastCompletedBuild.number){
+
         setTimeout(this.checkTaskVersion.bind(this),5000);
       }else{
         if(data.lastCompletedBuild.number > this.task_build){
-          if (this.update_changes){
+          if (this.update_changes||this.jiraChanges+this.taskChanges==0){
             window.location.reload();
           }          
           this.dataService.getData(this.configure.task_job+'/tasks/tasks.json').subscribe((data)=>{
@@ -789,9 +876,10 @@ export class AppComponent implements OnInit {
         }
       }
       this.submit = false;
-    }else{
-      this.is_processing = false;    
     }
+    // else{
+    //   this.is_processing = false;    
+    // }
 
   }
   enableJiraSummary(){
@@ -870,7 +958,7 @@ export class AppComponent implements OnInit {
   }
 
   removeScenarios(jira:any){
-    if (!jira.data.existing){
+    if (!jira.data.existing || jira.data.existing.length == 0){
       jira.data.existing = [];
       for (let scenario of jira.data.scenarios){
         jira.data.existing.push(scenario.name);
@@ -935,11 +1023,22 @@ export class AppComponent implements OnInit {
     
     for(let case_item of cases){
       if (case_item.name.indexOf(jira_id) >=0){
-        case_item.data.changes.push(this.frontend.node)        
+        case_item.data.changes.push(this.frontend.node);
+        if (case_item.data.jira_ref && case_item.data.jira_ref.length> 0){
+          this.unsetJiraRef(case_item.data.jira_ref);
+        }                
         this.frontend.node.data.changed = true;
       }
     }
     this.updateJiraChanges();
+  }
+
+  unsetJiraRef(jira_ref:any){
+    for(let env_case_data of jira_ref){
+      if (env_case_data.set_pass){
+        env_case_data.set_pass = false;
+      }
+    }
   }
 
   setTimelineValue(){
@@ -1275,7 +1374,8 @@ export class AppComponent implements OnInit {
             }
           }
           if (container_name){
-            this.frontend.screenshots_url = path_items[0] + "//" + path_items[1] + "/artifact/screenshots-" +container_name + ".tar.gz";
+            var containerName = "container" + parseInt(container_name.substr(9));
+            this.frontend.screenshots_url = path_items[0] + "//" + path_items[1] + "/artifact/screenshots-" + containerName + ".tar.gz";
           }
         }
         if (node.data.jiras){
@@ -1869,27 +1969,42 @@ export class AppComponent implements OnInit {
         }
         this.jira_index[jira.project] = i;
         jira.id = "NEW_" + jira.project + "_" +i;
+        // this.jira_refs[jira.id] = [];
       }
-      this.data[this.selectIndex].jiras.push(jira);
-      var case_data:TestNode ={name:jira.id+":"+jira.summary,children:[],data:{
-        id:jira.id,summary:jira.summary,scenarios:[],changes:[],checked:[],removed:[],existing:[],jiras:this.data[this.selectIndex].jiras,type:"jira",
-        scenario_text:jira.scenario_text,passed_tests:jira.passed_tests,is_added:true,is_new:jira.is_new,index:this.data[this.selectIndex].jiras.length -1
-      }};          
-      if (jira.is_new){
-        case_data.data.description = jira.description;
-        case_data.data.team = jira.team;
-        case_data.data.steps = jira.steps;
-        case_data.data.project = jira.project
+      if (!this.jira_refs[jira.id]){
+        this.jira_refs[jira.id] = [];
       }
-      var case_datas = this.data[this.selectIndex].perspectives[2].data.data;
-      case_datas.unshift(case_data);
-      this.data[this.selectIndex].perspectives[2].data.data = case_datas;
-      this.new_jira=null;
-      this.jira = case_data;
-      if(jira.scenario){
-        this.assignNode(this.data[this.selectIndex].jiras[case_data.data.index]);
-        this.data_type="test";
-      }
+      var version = this.data[this.selectIndex].version;
+      var envData = this.data[this.selectIndex];
+      // for (let envData of this.data){
+        if (envData.version <= version){
+          envData.jiras.push(jira);
+          var case_data:TestNode ={name:jira.id+":"+jira.summary,children:[],data:{
+            id:jira.id,summary:jira.summary,scenarios:[],changes:[],checked:[],removed:[],existing:[],jiras:this.data[this.selectIndex].jiras,type:"jira",
+            scenario_text:jira.scenario_text,passed_tests:jira.passed_tests,is_added:true,is_new:jira.is_new,index:this.data[this.selectIndex].jiras.length -1
+            }
+          };          
+          if (jira.is_new){
+            case_data.data.description = jira.description;
+            case_data.data.team = jira.team;
+            case_data.data.steps = jira.steps;
+            case_data.data.project = jira.project
+            case_data.data.jira_ref = this.jira_refs[jira.id];
+          }
+          var case_datas = this.data[this.selectIndex].perspectives[2].data.data;
+          case_datas.unshift(case_data);
+          this.jira_refs[jira.id].push(case_data.data);
+          envData.perspectives[2].data.data = case_datas;
+          if (this.data[this.selectIndex].name == envData.name){
+            this.jira = case_data;
+            if(jira.scenario){
+              this.assignNode(this.data[this.selectIndex].jiras[case_data.data.index]);
+              this.data_type="test";
+            }      
+          }
+        }        
+      // }
+      this.new_jira=null;      
     }
   }
   sortData(sort:Sort){

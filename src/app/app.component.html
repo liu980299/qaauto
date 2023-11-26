@@ -307,6 +307,12 @@
           <h3 *ngIf="data[selectIndex].moved_jiras">The tests for {{data[selectIndex].moved_jiras}} jiras have been moved out of daily auto test</h3>
           <h3 *ngIf="changedJiras>0">Total {{changedJiras}} Jiras has been changed</h3>          
           <table mat-table [dataSource]="data[selectIndex].perspectives[2].data._data._value" class="mat-elevation-z8">
+            <ng-container matColumnDef="checked">
+              <th mat-header-cell *matHeaderCellDef>Set Pass in Wiki</th>
+              
+              <td mat-cell *matCellDef="let element"><mat-checkbox [checked]="element.data.set_pass" (change)="set_pass_test($event.checked,element)" [disabled]="!pass_test(element)"></mat-checkbox> </td>            
+            </ng-container>
+
             <ng-container matColumnDef="id">
               <th mat-header-cell *matHeaderCellDef>JIRA ID</th>
               
@@ -336,7 +342,7 @@
                 <ul>The below tests were passed in auto daily tests
                 <li *ngFor="let pass_test of element.data.passed_tests"><a  [href]="pass_test.url" target="_blank">{{pass_test.name}}</a></li>
                 </ul>
-                <b *ngIf="element.data.scenarios.length == 0"> Please check whether the ticket could be marked as verified</b>
+                <b *ngIf="pass_test(element)"> Please check whether the ticket could be marked as verified</b>
                 </div>
               </td>            
             </ng-container>
@@ -344,7 +350,7 @@
 
             <tr mat-header-row *matHeaderRowDef="jira_headers"></tr>
             <tr mat-row *matRowDef="let row; columns: jira_headers;" [class.changed]="row.data.changes.length + row.data.removed.length>0" [class.warn]="row.data.scenarios.length == 0 && !row.data.passed_tests" 
-              [class.jira]="row.data.scenarios.length == 0 && row.data.passed_tests"></tr>
+              [class.jira]="row.data.scenarios.length + row.data.changes.length == 0 && row.data.passed_tests && row.data.passed_tests.length > 0"></tr>
           </table>
   
         </div>
@@ -467,6 +473,7 @@
           <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre>
           </div>
         </mat-tab>
+        <mat-tab label="Portal Log" *ngIf="frontend.data.error_ids"></mat-tab>
       </mat-tab-group>
     </as-split-area>    
     <as-split-area [visible]="data_type=='report' || (data_type=='test' && frontend && frontend.show_log == 'Hide Log') ">     
