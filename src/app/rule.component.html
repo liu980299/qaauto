@@ -1,0 +1,42 @@
+<h2 mat-dialog-title>New Rule</h2>
+<div *ngIf="target">
+    <mat-form-field style="width: 100%;">
+      <mat-label>{{target}}</mat-label>
+      <input type="text"
+             [placeholder]="'Please input an expected '+target"           
+             matInput           
+             [matAutocomplete]="autoError" [formControl]="targetCtrl" (blur)="setTarget()" required>
+      <mat-autocomplete  #autoError="matAutocomplete">      
+          <mat-option *ngFor="let target of filteredErrors|async" [value]="target">{{target}}</mat-option>      
+      </mat-autocomplete>
+      <mat-error *ngIf="targetCtrl.hasError('length')">
+        Please make sure {{target}} the length greather than 10!
+      </mat-error>
+  
+    </mat-form-field>
+  </div>  
+  
+  <mat-form-field [ngStyle]="{'minWidth': ' 100%'}"  *ngFor="let header of headers">
+  <mat-label>{{header}}</mat-label>    
+  <mat-select (selectionChange)="changeValue(header,$event)" [value]="new_item[header]" [multiple]="multiple_list.indexOf(header) >=0" required>
+      <mat-option [value]="item.name" *ngFor="let item of candidates[header]" [disabled]="item.name!='All'&&this.disabled[header]">{{item.name}}</mat-option>
+  </mat-select>
+  </mat-form-field>
+  <mat-form-field style="width: 100%;">
+    <mat-label>Comment</mat-label>
+    <input type="text"
+           placeholder="Please input a comment for the reason to put this error as expected"           
+           matInput           
+           [formControl]="commentCtrl" (blur)="setComment()" [value]="new_item['Comment']" (keydown)="setComment()" required>
+    <mat-error *ngIf="commentCtrl.hasError('length')">
+      Please make sure error message the length greather than 10!
+    </mat-error>
+  
+  </mat-form-field>
+  
+<mat-dialog-content class="mat-typography">
+    <mat-dialog-actions align="end">
+        <button mat-button mat-dialog-close>Close</button>
+        <button mat-button [disabled]="!isSaveEnabled" (click)="addNew()">Add</button>
+      </mat-dialog-actions>    
+</mat-dialog-content>

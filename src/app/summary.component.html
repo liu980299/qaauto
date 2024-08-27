@@ -1,0 +1,62 @@
+<h2>Summary</h2>
+<div *ngIf="target == 'Error'">
+  <h3 >Total {{envData.error_num}} errors found in auto tests from {{data.start_time}} to {{data.end_time}}</h3>
+  <h3>Total {{envData.expected_errors}} expected errors found</h3>  
+</div>
+<div *ngIf="target == 'Step'">
+  <h3 >Total {{envData.duplicate_steps}} duplicate steps found in auto tests from {{data.start_time}} to {{data.end_time}}</h3>
+  <h3>Total {{envData.expected_steps}} expected duplicate steps found</h3>  
+</div>
+
+<h3 >{{data.title}}</h3>
+<table mat-table [dataSource]="data.queues.checked"  class="mat-elevation-z8">
+  <ng-container *ngFor="let item of single_list" [matColumnDef]="item">
+    <th mat-header-cell *matHeaderCellDef >{{item}}</th>
+    <td mat-cell *matCellDef="let element"> {{element[item]}} </td>            
+  </ng-container>
+  <ng-container *ngFor="let header of data.multiple_list" [matColumnDef]="header">
+    <th mat-header-cell *matHeaderCellDef >{{header}}</th>
+    <td mat-cell *matCellDef="let element"> <p *ngFor="let item of element[header]"> {{item}}</p> </td>            
+  </ng-container>    
+
+    <ng-container matColumnDef="Remove">
+        <th mat-header-cell *matHeaderCellDef>remove</th>
+        <td mat-cell *matCellDef="let element">        
+            <button mat-fab color="primary" (click)="addRemoved(element)">
+            <mat-icon>delete</mat-icon>
+          </button>
+        </td>            
+      </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="headers.concat(['Remove']);"></tr>
+    <tr mat-row *matRowDef="let row; columns: headers.concat(['Remove']);"></tr>
+  </table>
+<button mat-raised-button color="primary" (click)="new_rule()">Add New</button>
+<H2 style="margin-top: 20px;"> Newly added rules</H2>
+
+<table mat-table [dataSource]="data.queues.added" class="mat-elevation-z8">
+  <ng-container *ngFor="let item of single_list" [matColumnDef]="item">
+    <th mat-header-cell *matHeaderCellDef >{{item}}</th>
+    <td mat-cell *matCellDef="let element"> {{element[item]}} </td>            
+  </ng-container>
+  <ng-container *ngFor="let header of data.multiple_list" [matColumnDef]="header">
+    <th mat-header-cell *matHeaderCellDef >{{header}}</th>
+    <td mat-cell *matCellDef="let element"> <p *ngFor="let item of element[header]"> {{item}}</p> </td>            
+  </ng-container>    
+
+
+  <ng-container matColumnDef="remove">
+        <th mat-header-cell *matHeaderCellDef>remove</th>
+        <td mat-cell *matCellDef="let element">        
+            <button mat-fab color="primary" (click)="removeAdded(element)">
+            <mat-icon style="font-size: medium;height: min-content;width: max-content;">delete</mat-icon>
+          </button>
+        </td>            
+      </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="headers"></tr>
+    <tr mat-row *matRowDef="let row; columns: headers.concat(['remove']);"></tr>
+  </table>
+
+
+

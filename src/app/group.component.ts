@@ -9,7 +9,9 @@ import { DataService } from './data.component';
 export class LogGroupComponent{
     @Input() envData:any;
     @Input() logGroup:any;
+    @Input() step:any;
     @Input() configure:any;    
+    @Input() scenario:any;
     constructor(private dataService:DataService){
         this.dataService = dataService;
     }
@@ -62,13 +64,13 @@ export class LogGroupComponent{
           item.name = item.thread;
         }
         if (!item.badgeText){
-            if (item.duplicated && item.error && item.error.level){
+            if (item.duplicated && !this.step.expected[item.name] && item.error && item.error.level){                
                 item.badgeText = "D,E";
               }else{
-                if (item.duplicated){
+                if (item.duplicated && !this.step.expected[item.name]){
                   item.badgeText = 'D';
                 }
-                if (item.error && item.error.level){
+                if (item.error && item.error.level &&!item.error.expected){
                   item.badgeText = 'E';
                 }
             }           

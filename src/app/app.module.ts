@@ -28,6 +28,8 @@ import {DialogChangeDialog} from './dialog.component';
 import { LogUnitComponent } from './log.component';
 import { LogGroupComponent } from './group.component';
 import { ScenarioComponent } from './scenario.component';
+import { SummaryComponent } from './summary.component';
+import { ConfigDialog } from './rule.component';
 
 
 
@@ -37,7 +39,9 @@ import { ScenarioComponent } from './scenario.component';
     DialogChangeDialog,
     LogUnitComponent,
     LogGroupComponent,
-    ScenarioComponent
+    ScenarioComponent,
+    SummaryComponent,
+    ConfigDialog
   ],
   imports: [
     HttpClientModule,

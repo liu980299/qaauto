@@ -109,7 +109,7 @@ mat-tab-group {
   }
 
 
-  .jira, .jira:hover{
+  .jira, .jira:hover,.expected{
     background-color: rgb(126, 247, 115)!important;
   }
   

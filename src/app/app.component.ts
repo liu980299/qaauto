@@ -1,4 +1,4 @@
-import { ApplicationInitStatus, APP_INITIALIZER, Component, Inject, OnInit,ViewChild,Renderer2, ElementRef   } from '@angular/core';
+import { ApplicationInitStatus, APP_INITIALIZER, Component, Inject, OnInit,ViewChild,Renderer2, ElementRef, AfterViewInit, QueryList, ViewChildren   } from '@angular/core';
 import { DataService } from './data.component';
 import {NestedTreeControl} from '@angular/cdk/tree';
 import {MatAutocompleteSelectedEvent} from '@angular/material/autocomplete';
@@ -11,6 +11,8 @@ import {ErrorStateMatcher} from '@angular/material/core';
 import { Observable, map, startWith } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { DialogChangeDialog } from './dialog.component';
+import { ScenarioComponent } from './scenario.component';
+import { SummaryComponent } from './summary.component';
 
 declare var report_url: any,jira_url:any;
 interface TestNode {
@@ -48,7 +50,7 @@ export class MyErrorStateMatcher implements ErrorStateMatcher {
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css']
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, AfterViewInit  {
   
   @ViewChild(BaseChartDirective)
   barChartType:ChartType = 'bar';
@@ -62,7 +64,12 @@ export class AppComponent implements OnInit {
   jiraChanges = 0;
   taskChanges = 0;
   changedJiras = 0;
+  changeErrors = 0;
+  changeDuplicates = 0;
   submit = false;
+  summary_list = ['Jiras','Errors','Duplicates'];
+  search_list = ['Tests','Pages','Tasks','Errors','Duplicates'];
+  report_list = ['Tests','Pages','Tasks','Timeline'];
   update_changes = false;
   treeControl = new NestedTreeControl<TestNode>(node => node.children);
   barChartPlugins = [];
@@ -77,6 +84,7 @@ export class AppComponent implements OnInit {
   backend:any;  
   conflict_changes:any=[];
   jira:any;
+  node:any
   is_processing = false;
   data_type = "";
   build:number;
@@ -106,7 +114,25 @@ export class AppComponent implements OnInit {
   last_build = true;
   job_url = "";
   keepAlive:any;
+  errors_cfg:any;
+  duplicates_cfg:any;
   log_analysis: boolean;
+  summaryPage : SummaryComponent;
+  scenario : ScenarioComponent;
+  @ViewChild('scenario',{static:false}) set scenarioContent(content:ScenarioComponent){
+    if (content){
+      this.scenario = content;
+    }    
+  };
+  @ViewChild('summaryPage',{static:false}) set content(content:SummaryComponent){
+    this.summaryPage = content;
+    if (this.summaryPage){
+      this.summaryPage.reset();
+      console.log(this.summaryPage);
+    }
+
+
+   } ;
 
   constructor(public dialog:MatDialog, private dataService: DataService,private _renderer2: Renderer2
     ){
@@ -116,6 +142,9 @@ export class AppComponent implements OnInit {
       );
 
     }
+  ngAfterViewInit(): void {    
+   
+  }
   ngOnInit(){
     if (report_url && report_url.indexOf("jenkins")>0){
       var job_url = report_url.substring(0,report_url.indexOf("/Workspace")).replace(/\/+$/,"");
@@ -239,6 +268,7 @@ export class AppComponent implements OnInit {
                     feature_checked_cases++;    
                     scenario_data.data.jiras = scenario_data.data.JIRA.split(",");
                   }
+                  scenario_data.data.work_url = report_url + "#" + scenario_data.data.url.split("/")[1].split(".")[0];
                   scenarios[scenario] = scenario_data;
                   scenario_data.data.case_list = cases;                  
                   tasks = this.setTask(tasks,scenario_data);                  
@@ -382,7 +412,7 @@ export class AppComponent implements OnInit {
     var failed_tests = 0
     if (node.data.jira_ref){
       for(let env_node of node.data.jira_ref){
-        failed_tests += env_node.scenarios.length + env_node.changes.length;
+        failed_tests += env_node.scenarios.length + env_node.changes.length - env_node.removed.length;
       }
       return failed_tests == 0;
     }
@@ -432,8 +462,12 @@ export class AppComponent implements OnInit {
   fetch_log_analysis(){
     if (location.href.indexOf("localhost") >=0){
       this.configure.log_analysis_url = "/assets/";
-      this.dataService.getZip("/assets/log_analysis.zip","log_analysis.json").then((data)=>{
-        this.loadLogAnalysis(data);    })
+      for(let envData of this.data){
+        var log_analysis_url = "/assets/" + envData.name + "_";
+        this.dataService.getZip(log_analysis_url + "log_analysis.zip",envData.name + "_log_analysis.json").then((data)=>{
+          this.loadLogAnalysis(data);    })
+  
+      }
   
     }else{
       
@@ -441,13 +475,17 @@ export class AppComponent implements OnInit {
         this.dataService.getData(this.configure.log_analysis.job+"/lastBuild/api/json").subscribe((data)=>{
           this.configure.log_analysis.lastBuild = data.number;
           this.configure.log_analysis_url = this.configure.log_analysis.job + "/" + this.configure.log_analysis.build + "/tasks/";
-          this.dataService.getZip(this.configure.log_analysis_url+ "log_analysis.zip","log_analysis.json").then((data)=>{
-            this.loadLogAnalysis(data);    }).catch((e)=>{
-              if (this.configure.log_analysis.build < this.configure.log_analysis.lastBuild){
-                this.configure.log_analysis.build++;
-                this.fetch_log_analysis();                
-              }
-            });
+          for (let envData of this.data){
+            var log_analysis_url = this.configure.log_analysis_url + envData.name  + "_";
+            this.dataService.getZip(log_analysis_url+ "log_analysis.zip",envData.name +"_log_analysis.json").then((data)=>{
+              this.loadLogAnalysis(data);    }).catch((e)=>{
+                if (this.configure.log_analysis.build < this.configure.log_analysis.lastBuild){
+                  this.configure.log_analysis.build++;
+                  this.fetch_log_analysis();                
+                }
+              });
+  
+          }
   
         });
       }
@@ -456,9 +494,10 @@ export class AppComponent implements OnInit {
   }
   loadLogAnalysis(data:any){
     console.log(data);
-    for(let envData of data){
+    var envData = data;
+    
       for (let env of this.data){
-        if (envData.env == env.name && (env.start_time.indexOf(envData.test_date)>=0 || location.origin.indexOf("local")>0)){
+        if (envData.env == env.name && (env.end_time.indexOf(envData.test_date)>=0 || location.origin.indexOf("local")>0)){
           this.log_analysis = true;
           if (env.perspectives.length == 4){
             var errorData = {name:"Errors",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};            
@@ -466,36 +505,104 @@ export class AppComponent implements OnInit {
             env.perspectives.push(errorData);
             env.perspectives.push(duplicatedData);
             env.tests = envData.tests;
-            env.main_log = envData.main_log
+            env.main_log = envData.main_log;
+            if (!this.errors_cfg){
+                this.errors_cfg = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Scenario","Comment"],
+                single_list:["Error"],multiple_list:["Scenario"]}; 
+            }
+            env.errors_cfg = {start_time:env.start_time,end_time:env.end_time};
+            for (let key in this.errors_cfg){
+              env.errors_cfg[key] = this.errors_cfg[key];
+            }
+
+            if (!this.duplicates_cfg){
+              this.duplicates_cfg = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Step","Scenario","Duplicate","Comment"],
+              single_list:["Step"],multiple_list:["Scenario","Duplicate"]}; 
+            }
+            env.duplicates_cfg = {start_time:env.start_time,end_time:env.end_time};
+            for (let key in this.duplicates_cfg){
+              env.duplicates_cfg[key] = this.duplicates_cfg[key];
+            }
             env.stacks ={};
             var error_nodes:TestNode[] = [];
             var duplicate_nodes:TestNode[] = [];
-            var features:any = {}
+            var api_list:any = {}
+            env.duplicate_steps = 0;
             for (let scenario_name in env.tests){
                 var scenario = env.tests[scenario_name];
                 this.loadScenario(scenario,env);
-                if (scenario.duplicated){
-                  if (!(scenario.feature in features)){
-                    var feature_node:TestNode = {name:scenario.feature,children:[],data:{type:"duplicates"}};
-                    features[scenario.feature] = feature_node;
-                    duplicate_nodes.push(feature_node);
+                env.duplicate_steps += scenario.duplicate_steps; 
+                if (scenario.error_summary && scenario.error_summary.length > 0){
+                  for (let error of scenario.error_summary){
+                    if (!(error.name in this.errors_cfg.data)){
+                      env.errors_cfg.data[error.name] = {}
+                    }
+                    error.scenario = scenario_name;
+                    if (!(scenario_name in env.errors_cfg.data[error.name])){
+                      env.errors_cfg.data[error.name][scenario_name]= [error];
+                    }else{
+                      env.errors_cfg.data[error.name][scenario_name].push(error);
+                    }                    
                   }
-                  var feature_data = features[scenario.feature];
-                  var scenario_node:TestNode = {name:scenario.name,children:[],data:scenario};
-                  scenario_node.data.type = "scenarios";
-                  feature_data.children.push(scenario_node);
+                }               
+                if (scenario.duplicated){
+                  for (let api of scenario.duplicate_summary){
+                    for (let step of api.steps){
+                      var step_name = step.name.trim().replace(step.name.split(" ",1)[0] + " ","");
+                      if (!step.expected){
+                        step.expected = {};    
+                        step.disabled = {};                    
+                      }
+                      if (!(env.duplicates_cfg.data[step_name])){
+                        env.duplicates_cfg.data[step_name] = {};
+                      }
+  
+                      if (!(env.duplicates_cfg.data[step_name][scenario.name])){
+                        env.duplicates_cfg.data[step_name][scenario.name] = {};
+                      }
+  
+                      step.expected[api.name] = false;
+                      // if (step.name.indexOf('"') >= 0){                        
+                      //   var items = step.name.split('"').filter((v: any,i: number)=>!(i%2))
+                      //   step_name = items.join("{}");
+                      // }                      
+                      if (!env.duplicates_cfg.data[step_name][scenario.name][api.name]){
+                        env.duplicates_cfg.data[step_name][scenario.name][api.name] = [step]                          
+                      }else{
+                        env.duplicates_cfg.data[step_name][scenario.name][api.name].push(step);
+                      }
+                      if (!(api.name in api_list)){
+                        var api_node:TestNode = {name:api.name,children:[],data:{type:"duplicates",scenarios:{}}};
+                        api_list[api.name] = api_node;
+                        duplicate_nodes.push(api_node);
+                      }
+                      var api_data = api_list[api.name];
+                      if (!(scenario.name in api_data.data.scenarios )){
+                        var scenario_node:TestNode = {name:scenario.name,children:[],data:scenario};
+                        scenario_node.data.type = "scenarios";
+                        api_data.data.scenarios[scenario.name] = scenario;  
+                        api_data.children.push(scenario_node);  
+                      }
+                    }                    
+                  }   
+                  
                 }
-            }        
+            }
+            env.error_num =0;        
+            env.expected_errors = 0;
+            env.expected_steps = 0;
             for (let log_name in envData.errors){
               var log_error_node:TestNode = {name:log_name,children:[],data:{type:"errors"}};
               error_nodes.push(log_error_node);
               var log_errors = envData.errors[log_name];
+              var log_total = 0;
               this.dataService.getZip(this.configure.log_analysis_url + log_name + "/stacks.zip",log_name+"/stacks.json").then(
                 (data)=>{
                   env.stacks[log_name] = data;
                 }
                 );
               for (let category in log_errors){
+                var sub_total = 0;  
                 if (category == 'fatal' && log_errors['fatal'].length > 0){
                   var fatal_node:TestNode={name:"fatal",children:[],data:{type:"errors"}};
                   log_error_node.children?.push(fatal_node);
@@ -504,12 +611,13 @@ export class AppComponent implements OnInit {
                     error_node.data = error;
                     error_node.data.log_file = log_name;
                     fatal_node.children?.push(error_node);
+                    sub_total++;
                   }
 
                 }
                 else{
                   var category_node:TestNode ={name:category,children:[],data:{type:"errors"}};
-                  var sub_total = 0;                
+                                
                   for (var error_type in log_errors[category]){
                     var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors"}};                    
                     var error_list = log_errors[category][error_type];
@@ -562,7 +670,12 @@ export class AppComponent implements OnInit {
                         error_node.data.is_new = false;
                       }
                       error_node.data.log_file = log_name
-                      error_node.data.error = scenario_dict[scenario].error
+                      for (let error of env.tests[scenario].error_summary){
+                        if (error.name == scenario_dict[scenario].error.name){
+                          error_node.data.error = error
+                        }
+                      }
+                      
                       error_type_node.children?.push(error_node);  
                     }
                     error_type_node.name = error_type + "(" + error_list.length +")";
@@ -575,13 +688,24 @@ export class AppComponent implements OnInit {
                   }
                   
                 }
+                log_total += sub_total;
               }
+
+              env.error_num  += log_total;
             }
             errorData.data.data = error_nodes;
             duplicatedData.data.data = duplicate_nodes;
           }
         }
       }
+  }
+  checkConfig(cfg:string){
+    if (cfg == 'Error'){
+      this.changeErrors = this.errors_cfg.queues.added.length + this.errors_cfg.queues.removed.length;
+    }
+
+    if (cfg == 'Duplicate'){
+      this.changeDuplicates = this.duplicates_cfg.queues.added.length + this.duplicates_cfg.queues.removed.length;
     }
 
   }
@@ -786,6 +910,7 @@ export class AppComponent implements OnInit {
     }
     this.updateJiraChanges();
     this.setJiraRefs();
+    
   }
 
   setJiraRefs(){
@@ -801,12 +926,56 @@ export class AppComponent implements OnInit {
       }
     }
   }
+  getCheckedTests(test_data:any):any{
+    var total_tests = 0;
+    var checked_tests = 0;
+    for(let test_node of test_data.children){      
+      if(test_node.children.length == 0){        
+        if (test_node.data){
+          total_tests++;
+          if (test_node.data.JIRA || test_node.data.changes.length){
+            checked_tests++;
+          }  
+        }
+      }else{
+        var res = this.getCheckedTests(test_node);
+        total_tests += res.total_tests;
+        checked_tests +=  res.checked_tests;
+      }
+    }
+    test_data.name = test_data.name.split("(")[0] + "(" + checked_tests +"/" + total_tests + ")";
+    return {total_tests:total_tests,checked_tests:checked_tests}
+
+  }
+  resetCheckedTests(perspective:any){
+    var length = perspective.data.data.length;
+    var new_data: any[] = [];
+    var changed = false;
+    for (var i = 0; i < length; i ++){
+      var test_data = perspective.data.data[i];
+      if (test_data.name.indexOf("(") > 0){
+        var previous = test_data.name;
+        this.getCheckedTests(test_data);
+        if (previous != test_data.name){
+          changed = true;
+        }
+      }
+      new_data.push(test_data);
+    }
+    if (changed){
+      perspective.data.data = new_data;
+    }
+
+  }
   updateJiraChanges(){
     var changes = 0;
     var changedJiras = 0;
     for (let env of this.data){
+      this.resetCheckedTests(env.perspectives[0]);
+      this.resetCheckedTests(env.perspectives[1]);
       for (let case_data of env.perspectives[2].data.data){
-        if (case_data.data.changes.length + case_data.data.removed.length > 0){
+        if (!case_data.data.set_pass && case_data.data.changes.length + case_data.data.removed.length > 0){
+
           changes += case_data.data.changes.length + case_data.data.removed.length;
           changedJiras ++;
         }        
@@ -814,7 +983,8 @@ export class AppComponent implements OnInit {
     }
     for (let ticket in this.jira_refs){
       if (this.jira_refs[ticket].length > 0 && this.jira_refs[ticket][0].set_pass){
-        this.jiraChanges++;    
+        changes++;    
+        changedJiras++;    
       }
     }
     this.jiraChanges = changes;
@@ -825,17 +995,42 @@ export class AppComponent implements OnInit {
   
   submitChanges(){    
     this.is_processing = true;    
-    this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
-      if (data.number == this.build){
-        this.last_build = true;
-        this.submit = true;
-        this.checkTaskVersion();
-      }else{
-        this.last_build = false;
-        this.error_message = "The test result of the current workspace is out of date. Please submit the changes against the result of build " + data.number;
-      }
-    })
+    if (location.origin.toLowerCase().indexOf("localhost") < 0){
+      this.dataService.getData(this.job_url+"/lastBuild/api/json").subscribe((data)=>{
+        if (data.number == this.build){
+          this.last_build = true;
+          this.submit = true;
+          this.checkTaskVersion();
+        }else{
+          this.last_build = false;
+          this.error_message = "The test result of the current workspace is out of date. Please submit the changes against the result of build " + data.number;
+        }
+      })  
+    }else{
+      this.updateChanges();
+    }
 
+  }
+
+  addQueueItem(queues:any,changes:any){
+    for (let row of queues.checked){
+      var item:any = {};
+      for (let key in row){
+        if (key != 'target' && key != 'id'){
+          item[key] = row[key];
+        }
+      }
+      changes.push(item);
+    }
+    for (let row of queues.added){
+      var item:any = {};
+      for (let key in row){
+        if (key != 'target' && key != 'id'){
+          item[key] = row[key];
+        }
+      }
+      changes.push(item);      
+    }
   }
 
   updateChanges(){
@@ -845,7 +1040,7 @@ export class AppComponent implements OnInit {
     var task_queue = ['removed','scenarios','changes']
     for (let envData of this.data){
       for (let case_data of envData.perspectives[2].data.data){
-        if (case_data.data.removed.length + case_data.data.changes.length > 0){
+        if (!case_data.data.set_pass && case_data.data.removed.length + case_data.data.changes.length > 0){
           var jira:any = {};
           var existing = false;
           jira.id = case_data.data.id;
@@ -943,6 +1138,15 @@ export class AppComponent implements OnInit {
         }        
       }
     }
+    if (this.changeErrors > 0){
+      changes.error_cfgs =[]
+      this.addQueueItem(this.errors_cfg.queues,changes.error_cfgs);
+    }
+    if (this.changeDuplicates > 0){
+      changes.duplicates_cfg =[]
+      this.addQueueItem(this.duplicates_cfg.queues,changes.duplicates_cfg);
+    }
+    
       if (this.user){
         changes.user = this.user;
       }
@@ -973,6 +1177,7 @@ export class AppComponent implements OnInit {
         this.jiraChanges--;
       }
     }
+    this.updateJiraChanges();
   }
   setTaskScenario(scenarios:any,scenario:any,changed:boolean,test_date:string){
     if (!(scenario.name in scenarios)){
@@ -1015,7 +1220,7 @@ export class AppComponent implements OnInit {
   }
   submitTasks(){
     if (this.submit){
-      var totalChange = this.jiraChanges + this.taskChanges;
+      var totalChange = this.jiraChanges + this.taskChanges + this.changeErrors + this.changeDuplicates;
       if(totalChange > 0){
         var conflicts_number = 0;
         if (this.conflict_changes.length > 0){          
@@ -1043,11 +1248,18 @@ export class AppComponent implements OnInit {
     // }
 
   }
-  enableJiraSummary(){
-    if(this.jira){
+  enableSummary(workspace:string){
+    if(workspace == 'Jiras' && this.jira){
       console.log(this.jira);
       this.jira.data.selected = false;
       this.jira=null;
+    }
+    if(workspace == "Errors"||workspace=="Duplicates"){
+      this.clearNodes();
+      if (this.summaryPage){
+        this.summaryPage.reset();        
+      }      
+      this.node = null;
     }
   }
 
@@ -1324,8 +1536,19 @@ export class AppComponent implements OnInit {
     this.setTimelineValue();
 
   }
+  isErrorsOrDuplicates(workspace:string){
+    return ["Errors","Duplicates"].indexOf(workspace) >= 0;
+
+  }
   setWorkspace(workspace:string){
-    this.workspace = workspace;
+    if (workspace != this.workspace){
+      this.workspace = workspace;      
+      if (this.isErrorsOrDuplicates(this.workspace)&&!this.isErrorsOrDuplicates(workspace)){
+        this.data_type = "report";
+        this.node = null;
+      }      
+    }
+    
     if(workspace == 'Timeline'){
       this.setTimeline();
     }
@@ -1388,6 +1611,10 @@ export class AppComponent implements OnInit {
   title = 'qa_auto';
   selectNode(node:any){
     this.clearNodes();
+    if (this.scenario){
+      this.scenario.reset();
+    }
+    
     console.log(node);
     if (!node.data){
       this.data_type = "summary";
@@ -1395,6 +1622,7 @@ export class AppComponent implements OnInit {
       this.frontend.name = node.name;
       return;
     }
+    this.node = node;
     node.data.selected=true;
     var test_data = [];
     if (node.data.type && node.data.type == 'report'){
@@ -1497,18 +1725,18 @@ export class AppComponent implements OnInit {
       this.data[this.selectIndex].logs[log.data.log_file] ={}      
     }
     var logs= this.data[this.selectIndex].logs[log.data.log_file]
-    if (!logs[log.name]){
-      logs[log.name] = {}
+    if (!logs[log.data.thread]){
+      logs[log.data.thread] = {}
     }
-    if (!logs[log.name][log.data.unknown]){
-      this.dataService.getZip(this.configure.log_analysis_url + log.data.log_file + "/unknown/" + log.name +".zip", log.data.log_file + "/unknown/" + log.name +"/"+log.data.unknown +".json").then((data)=>{
+    if (!logs[log.data.thread][log.data.unknown]){
+      this.dataService.getZip(this.configure.log_analysis_url + log.data.log_file + "/unknown/" + log.data.thread +".zip", log.data.log_file + "/unknown/" + log.data.thread +"/"+log.data.unknown +".json").then((data)=>{
           logs[log.data.unknown] = data;
           this.frontend = data;             
           this.setStackList(this.frontend,log.data.log_file,this.data[this.selectIndex]);        
           }  
         );            
     }else{
-      this.frontend = logs[log.name][log.data.unknown];
+      this.frontend = logs[log.data.thread][log.data.unknown];
       this.setStackList(this.frontend,log.data.log_file,this.data[this.selectIndex]);
     }
     console.log(this.frontend);
@@ -1571,17 +1799,25 @@ export class AppComponent implements OnInit {
 
   }
 
-  loadScenario(scenario:any,envData:any){
+  loadScenario(scenario:any,envData:any){    
     scenario.error_summary = [];
     scenario.duplicate_summary = [];
+    scenario.step_summary = {};
+    scenario.duplicate_steps = 0;
     if (scenario.steps){
       var step_id = 0;
       for (let step of scenario.steps){
         step_id++;
         step.id = "step_" + step_id;
+        step.scenario =  scenario
+        if (!scenario.step_summary[step.name]){
+          scenario.step_summary[step.name] = [step.id];
+        }else{
+          scenario.step_summary[step.name].push(step.id);
+        }
         var step_error:any = {name:step.name,errors:[]}
         if (step.errors && step.duplicated){
-          step.badgeText = "D,E";
+          step.badgeText = "D,E";          
         }else{
           if (step.errors || step.sessions){
             step.badgeText = "E";
@@ -1592,6 +1828,7 @@ export class AppComponent implements OnInit {
 
         }
         if (step.duplicated){
+          scenario.duplicate_steps++;
           for (let api of step.duplicated){
             this.setNameSteps(scenario.duplicate_summary,api,step);            
           }
@@ -1599,7 +1836,7 @@ export class AppComponent implements OnInit {
         var errors:any = {};
         if (step.errors){          
           for (let error of step.errors){
-            this.setNameSteps(scenario.error_summary,error.name,step);
+            this.setNameSteps(scenario.error_summary,error.name,step);                        
             
             if (step_error.errors.indexOf(error.name) < 0){
               step_error.errors.push(error.name);
@@ -1671,7 +1908,17 @@ export class AppComponent implements OnInit {
       target_steps = {name:name,steps:[]};
       name_list.push(target_steps);
     }
-    target_steps.steps.push(step);
+    var in_steps = false;
+    for (var step_item of target_steps.steps){
+      if (step_item.id == step.id){
+        in_steps = true;
+        break;
+      }
+    }
+    if(!in_steps){
+      target_steps.steps.push(step);
+    }
+    
   }
 
   setScenario(scenario:any){
@@ -1936,14 +2183,31 @@ export class AppComponent implements OnInit {
       this.frontend.node.data.temp_comment.is_monitored = this.frontend.node.data.is_monitored;
     }
   }
+  resetSummary(){    
+    for (let envData of this.data){
+      if (this.workspace == "Errors"){
+        if (envData.errors_cfg.reset){
+          envData.errors_cfg.reset();
+        }
+      }
+      if (this.workspace == "Duplicates"){
+        if (envData.errors_cfg.reset){
+          envData.duplicates_cfg.reset();
+        }         
+      }
+    }
+  }
   changeEnv(_event:any){
     this.selectIndex = _event;
     if (this.data_type=="report" || this.data_type=="test"){
       this.setReportData();
-    }else{
+    }else{      
+      this.setWorkspace(this.workspace)        
 
+    }  
+    if(this.summaryPage){
+      this.summaryPage.reset();
     }
-    
     if(this.workspace == 'Timeline'){
       this.setTimeline();
     }
@@ -1963,12 +2227,14 @@ export class AppComponent implements OnInit {
     for (let column in summary.data[0]){
       this.headers.push(column);
     }
-    this.datasources = summary.data.sort((a:any,b:any)=>(a["Started on"] > b["Started on"]?-1:1));
+    this.datasources = [];
     for (let item of summary.data){
       this.barChartData.labels?.push(item["Started on"])
       failed_data.push(item.failed);
-      total_data.push(item.Scenarios-item.failed)
-    }
+      total_data.push(item.Scenarios-item.failed);
+      this.datasources.push(item);
+    }     
+    this.datasources.sort((a:any,b:any)=>(a["Started on"] > b["Started on"]?-1:1));
     var dataset = {data:failed_data,
       label: 'Failed Tests',
       fill: false,

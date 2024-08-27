@@ -2,7 +2,7 @@
     <mat-expansion-panel-header>
       <mat-panel-title [matBadge]="getBadgeText(worker)" [matBadgeHidden]="!worker.badgeText" matBadgeColor="accent"  matBadgeSize="small">
         {{worker.name}}
-      </mat-panel-title>
+      </mat-panel-title>      
     </mat-expansion-panel-header>
     <mat-accordion>
       <log-unit [stacks]="envData.stacks" [logUnit]="worker"></log-unit>    

@@ -41,17 +41,18 @@
     <mat-tab-group (selectedIndexChange)="changeEnv($event)" [selectedIndex]="selectIndex">
       <mat-tab [label]="env.name" *ngFor="let env of data">
         <div *ngFor="let perspective of env.perspectives">
+          <div *ngIf="summary_list.indexOf(perspective.name ) >= 0 && perspective.name == workspace"><button mat-raised-button color="primary" (click)="enableSummary(perspective.name)" *ngIf="node">Summary</button>
+            <button mat-raised-button color="primary" style="margin-left: 10px;" (click)="addJira()" [disabled]="new_jira" *ngIf="perspective.name == 'Jiras'">Add a Jira</button>
+
+          </div>
+
           <div [hidden]="perspective.name!=workspace">
-            <div class="inline" *ngIf="perspective.name!='Jiras'"><input type="search" matInput placeholder="Search" [(ngModel)]="perspective.search" style="width:90%">
+            <div class="inline" *ngIf="search_list.indexOf(perspective.name ) >= 0"><input type="search" matInput placeholder="Search" [(ngModel)]="perspective.search" style="width:90%">
               <button mat-button matSuffix mat-stroked-button aria-label="search" (click)="searchPerspective(perspective)" 
-              [disabled]="perspective.search.length < 7" style="width: 10%">
+              [disabled]="perspective.search.length < 4" style="width: 10%">
                 <mat-icon>search</mat-icon>
             </button>
           </div>  
-          <div *ngIf="perspective.name == 'Jiras'"><button mat-raised-button color="primary" (click)="enableJiraSummary()" *ngIf="jira">Summary</button>
-            <button mat-raised-button color="primary" style="margin-left: 10px;" (click)="addJira()" [disabled]="new_jira">Add a Jira</button>
-
-          </div>
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
@@ -59,6 +60,7 @@
             <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0))"
             [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && !node.data.is_new"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
+            [class.expected] =  "(perspective.name=='Duplicates' && node.data.is_duplicate_expected) || (perspective.name=='Errors' && node.data.error && node.data.error.expected)"
             [class.changed]="node.data && node.data.changes && node.data.removed && node.data.changes.length + node.data.removed.length > 0 && !node.data.selected" 
             [class.selected]="node.data && node.data.selected"            
             >{{node.name}}<span *ngIf="perspective.name=='Jiras'||perspective.name=='Tasks'" [matBadge]="node.data.changes.length+node.data.removed.length" [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small"></span>        
@@ -178,7 +180,7 @@
   <as-split-area [size]="80">
     <as-split direction="vertical" >
     <as-split-area id="frontend">
-      <div style="display: block;height: 100%;" *ngIf="data_type=='report'">
+      <div style="display: block;height: 100%;" *ngIf="data_type=='report' && report_list.indexOf(workspace) >=0">
         <H2><b>{{report_name}}</b></H2>
         <canvas
           baseChart
@@ -240,17 +242,17 @@
 
         <div *ngIf="jira">
           <h3 *ngIf="!jira.data.is_updating"><span>{{jira.name}}</span><button mat-raised-button  color="primary" style="margin-left: 10px;" *ngIf="jira.data.is_added" (click)="updateJira()">Update</button></h3>          
-          <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="jira_menu" [disabled]="jira.data.checked.length==0">Assign to Case</button>
+          <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="jira_menu" [disabled]="jira.data.checked.length==0">Link to different Jira</button>
           <mat-menu #jira_menu="matMenu">
             <div *ngFor="let case of data[selectIndex].jiras">
             <button mat-menu-item  class="menu-item" *ngIf="(case.id + ':' + case.summary) != jira.name" (click)="moveScenarios(jira, case)">{{case.id}}:{{case.summary}}</button>              
             </div>
           </mat-menu>
-          <button mat-raised-button  color="primary" style="margin-left: 10px;" [disabled]="jira.data.checked.length==0" (click)="removeScenarios(jira)">Remove from Case</button>
+          <button mat-raised-button  color="primary" style="margin-left: 10px;" [disabled]="jira.data.checked.length==0" (click)="removeScenarios(jira)">Remove from this Jira</button>
           <div *ngIf="jira.data.scenarios.length > jira.data.removed.length">
             <h4>Existing Scenarios</h4>
             <div *ngFor="let scenario of jira.data.scenarios">
-            <mat-checkbox  *ngIf="!isRemoved(jira,scenario.name)" (change)="checkScenario(jira,scenario)" [checked]="jira.data.checked.indexOf(scenario.name) >= 0">{{scenario.name}}</mat-checkbox>
+            <mat-checkbox  *ngIf="!isRemoved(jira,scenario.name)" (change)="checkScenario(jira,scenario)" [checked]="jira.data.checked.indexOf(scenario.name) >= 0"></mat-checkbox><a [href]="scenario.data.work_url" target="_blank" style="margin-left:2%;">{{scenario.name}} </a>
             </div>
           </div>
           <div *ngIf="jira.data.changes.length > 0">
@@ -393,9 +395,15 @@
 
         </mat-accordion>
         
+      </div>
+      <div style="display: block;height: 100%;" *ngIf="workspace=='Errors' && !node">
+        <summary [data]="data[selectIndex].errors_cfg" #summaryPage [envData] = "data[selectIndex]" [envs]="data" (configChange)="checkConfig($event)"></summary>
+      </div>     
+      <div style="display: block;height: 100%;" *ngIf="workspace=='Duplicates' && !node">
+        <summary [data]="data[selectIndex].duplicates_cfg" #summaryPage [envData] = "data[selectIndex]" [envs]="data" (configChange)="checkConfig($event)"></summary>
       </div>     
       <div style="display: block;height: 100%;" *ngIf="data_type=='scenario'">
-        <scenario [envData]="data[selectIndex]" [scenario]="frontend" [configure]="configure"> </scenario>
+        <scenario [envData]="data[selectIndex]" [parent]="data" [scenario]="frontend" #scenario [configure]="configure" (configChange)="checkConfig($event)"> </scenario>
         </div>
         <div style="display: block;height: 100%;" *ngIf="data_type=='session' && frontend">       
           <H2 style="display:inline-flex;" *ngIf="frontend.user">User : {{frontend.user}}</H2>
@@ -421,8 +429,7 @@
         <mat-tab label="Steps">          
           <div style="display:inline-flex;"><a id="frontend_test_name" *ngIf="frontend.url" [href]="frontend.url" target="_blank">{{frontend.name}}</a>
             <button mat-raised-button (click)="copyLink()" color="primary" style="margin-left: 10%;">Copy</button>
-            <button mat-raised-button (click)="gotoError()" color="primary" style="margin-left: 10px;">Error Step</button>
-            <button mat-raised-button (click)="logSwitch()" color="primary" style="margin-left: 10px;" >{{frontend.show_log}}</button>
+            <button mat-raised-button (click)="gotoError()" color="primary" style="margin-left: 10px;">Error Step</button>    
             <button mat-raised-button (click)="manageSwitch()" color="primary" style="margin-left: 10px;" [disabled]="!last_build">{{frontend.show_management}}</button>
             <button mat-raised-button (click)="historySwitch()" color="primary" style="margin-left: 10px;" *ngIf="frontend.node.data.history">{{frontend.show_history}}</button>
             
@@ -500,18 +507,18 @@
           
         <mat-tab label="Screenshot"><a [href]="frontend.img" *ngIf="frontend.img" ref="images" target="_blank"><img [src]="frontend.img"  style="height: 100%; width: 100%;"></a></mat-tab>
       
-        <mat-tab label="Console Log"><div *ngIf="frontend.console_log"><b>{{frontend.console_log[0]}}</b>
+        <mat-tab label="Auto Test Log"><div *ngIf="frontend.console_log"><b>{{frontend.console_log[0]}}</b>
           <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre>
           </div>
         </mat-tab>
-        <mat-tab label="Server Log" *ngIf="frontend.test && frontend.test.has_logs">
-          <scenario [envData]="data[selectIndex]" [scenario]="frontend.test" [configure]="configure"> </scenario>
+        <mat-tab label="Product Log" *ngIf="frontend.test && frontend.test.has_logs">
+          <scenario [envData]="data[selectIndex]" [parent]="data" [scenario]="frontend.test" #scenario (configChange)="checkConfig($event)" [configure]="configure"> </scenario>
 
         </mat-tab>
       </mat-tab-group>
     </as-split-area>    
-    <as-split-area [visible]="data_type=='report' || (data_type=='test' && frontend && frontend.show_log == 'Hide Log') ">     
-      <div *ngIf="data_type=='report'">   
+    <as-split-area [visible]="(data_type=='report' && report_list.indexOf(workspace) >=0) || (data_type=='test' && frontend && frontend.show_log == 'Hide Log') ">     
+      <div *ngIf="data_type=='report' && report_list.indexOf(workspace) >=0">   
         <table mat-table [dataSource]="datasources" matSort (matSortChange)="sortData($event)" class="mat-elevation-z8">
           <ng-container [matColumnDef]="item" *ngFor="let item of headers">
             <th mat-header-cell *matHeaderCellDef [mat-sort-header]="item">{{item}}</th>
@@ -521,13 +528,17 @@
           <tr mat-row *matRowDef="let row; columns: headers;"></tr>
         </table>
       </div>
-      <mat-tab-group *ngIf="data_type=='test' && backend">
+      <!-- <mat-tab-group *ngIf="data_type=='test' && backend">
         <mat-tab *ngFor="let server of backend" [label] = "server.name"><input type="search" matInput placeholder="Search" [(ngModel)]="server.search" (change)="changeSearch()" style="width:100%">
           <div class="text" *ngFor="let line of server.logs" [ngClass] = "{'error':test_user_id.length > 0 && line.content.indexOf(test_user_id) > 0}"><span *ngIf="line.content.indexOf(server.search)>=0">{{line.log_time}}:{{line.content}}<hr></span></div></mat-tab>
-      </mat-tab-group>
+      </mat-tab-group> -->
     </as-split-area>
     </as-split>
   </as-split-area>
 
 </as-split>
-<button mat-raised-button [disabled] = "jiraChanges+taskChanges==0 || is_processing ||!last_build" color="primary" (click)="submitChanges()">Submit</button><span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span><span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>
+<button mat-raised-button [disabled] = "jiraChanges+taskChanges+changeErrors+changeDuplicates==0 || is_processing ||!last_build" color="primary" (click)="submitChanges()">Submit</button>
+<span *ngIf="jiraChanges>0"><b style="color:red">{{jiraChanges}}</b> changes in Jira</span>
+<span *ngIf="taskChanges>0" style="margin-left: 20px;"><b style="color:red">{{taskChanges}}</b> changes in Tasks</span>
+<span *ngIf="changeErrors>0" style="margin-left: 20px;"><b style="color:red">{{changeErrors}}</b> changes in Error Configure</span>
+<span *ngIf="changeDuplicates>0" style="margin-left: 20px;"><b style="color:red">{{changeDuplicates}}</b> changes in Duplicate Configure</span>
