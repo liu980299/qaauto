@@ -119,6 +119,9 @@ mat-tab-group {
   .error{
     background-color: crimson;
   }
+  .errorText{
+    color:red;
+  }
   .qaauto-tree ul,
   .qaauto-tree li {
     margin-top: 0;

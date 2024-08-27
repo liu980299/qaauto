@@ -1,0 +1,12 @@
+<mat-expansion-panel *ngFor="let stack of logUnit.stacks_list" (opened)="openStack(stack)">
+    <mat-expansion-panel-header>
+      <mat-panel-title style="color:red">
+        {{stack.name}}
+      </mat-panel-title>
+    </mat-expansion-panel-header>
+    <mat-accordion>
+      <P *ngFor="let msg of stack.msg">{{msg}}</P>
+    </mat-accordion>
+  </mat-expansion-panel>        
+
+  <P *ngFor="let msg of logUnit.msg" [ngClass] = "{'errorText':msg.indexOf('ERROR')>0}">{{msg}}</P>

@@ -22,6 +22,15 @@
   <mat-icon [matBadge]="taskChanges" [matBadgeHidden]="taskChanges==0" matBadgeColor="accent"  matBadgeSize="small">list</mat-icon>
   <span>Tasks</span>
 </button>
+<button mat-menu-item (click)="setWorkspace('Errors')" [disabled]="workspace=='Errors'" *ngIf="log_analysis">
+  <mat-icon>error</mat-icon>
+  <span>Errors</span>  
+</button>
+<button mat-menu-item (click)="setWorkspace('Duplicates')" [disabled]="workspace=='Duplicates'" *ngIf="log_analysis">
+  <mat-icon>warning</mat-icon>
+  <span>Duplicates</span>
+</button>
+
 </mat-menu>
 <h1 style="padding-top: 10px;" > Portal QA Auto Test Workspace</h1>
 <h3>welcome!<b *ngIf="user && user.username">{{user.username}}</b></h3>
@@ -61,7 +70,7 @@
           <mat-nested-tree-node *matTreeNodeDef="let node; when: hasChild">
               <div class="mat-tree-node">
                 <button mat-icon-button matTreeNodeToggle
-                        [attr.aria-label]="'Toggle ' + node.name">
+                        [attr.aria-label]="'Toggle ' + node.name" [id]="node.name.split('(')[0].replaceAll(' ','_')">
                   <mat-icon class="mat-icon-rtl-mirror">
                     {{treeControl.isExpanded(node) ? 'expand_more' : 'chevron_right'}}
                   </mat-icon>
@@ -110,7 +119,7 @@
       >
     <input matSliderThumb [(ngModel)]="env.timelines.value" (change)="setTimelineValue()">
   </mat-slider>  
-  <mat-form-field style="width:100%">
+  <mat-form-field style="width:100%" *ngIf="env">
     <mat-label>Select Test Accounts</mat-label>
     <mat-chip-grid #chipGrid aria-label="Account selection">
       <mat-chip-row *ngFor="let account of env.timelines.selected_accounts" (removed)="removeAccount(account)">
@@ -145,7 +154,7 @@
         {{container.name}}        
       </mat-card-title>
       <mat-card-subtitle><h3><b>{{container.context.name}}</b></h3></mat-card-subtitle>
-      <mat-card-subtitle><span *ngIf="container.scenario.test_users"><p *ngFor="let user of container.scenario.test_users"><b>{{user}}</b></p></span>{{container.scenario.name}}</mat-card-subtitle>
+      <mat-card-subtitle><span *ngIf="container.scenario.test_user"><p ><b>{{container.scenario.test_user}}</b></p></span>{{container.scenario.name}}</mat-card-subtitle>
     </mat-card-header>
   </mat-card>
 </div>
@@ -156,7 +165,7 @@
         {{container.name}}        
       </mat-card-title>
       <mat-card-subtitle><h3><b>{{container.context.name}}</b></h3></mat-card-subtitle>
-      <mat-card-subtitle><span *ngIf="container.scenario.test_users"><p *ngFor="let user of container.scenario.test_users"><b>{{user}}</b></p></span><p>{{container.scenario.name}}</p></mat-card-subtitle>
+      <mat-card-subtitle><span *ngIf="container.scenario.test_user"><p ><b>{{container.scenario.test_user}}</b></p></span><p>{{container.scenario.name}}</p></mat-card-subtitle>
     </mat-card-header>
   </mat-card>
 </div>
@@ -384,7 +393,29 @@
 
         </mat-accordion>
         
-      </div>            
+      </div>     
+      <div style="display: block;height: 100%;" *ngIf="data_type=='scenario'">
+        <scenario [envData]="data[selectIndex]" [scenario]="frontend" [configure]="configure"> </scenario>
+        </div>
+        <div style="display: block;height: 100%;" *ngIf="data_type=='session' && frontend">       
+          <H2 style="display:inline-flex;" *ngIf="frontend.user">User : {{frontend.user}}</H2>
+          <div *ngIf="frontend.worker">
+          <H3 >Known APIs</H3>
+          <log-group [envData]="data[selectIndex]" [logGroup]="frontend.worker" [configure]="configure"></log-group>
+    
+           </div>
+           <div *ngIf="frontend.unknown">
+            <H3 >Log Units</H3>
+            <log-group [envData]="data[selectIndex]" [logGroup]="frontend.unknown" [configure]="configure"></log-group>
+      
+             </div>
+             <H3 *ngIf="frontend.msg||frontend.stacks">Session Log</H3>
+             <log-unit [stacks]="data[selectIndex].stacks" [logUnit]="frontend"></log-unit>     
+          </div>
+          <div style="display: block;height: 100%;" *ngIf="data_type=='log' && frontend">       
+            <H2 style="display:inline-flex;" *ngIf="frontend.thread">Log : {{frontend.thread}}</H2>
+            <log-unit [stacks]="data[selectIndex].stacks" [logUnit]="frontend"></log-unit>    
+          </div>
       <mat-tab-group *ngIf="data_type=='test' && frontend">
         
         <mat-tab label="Steps">          
@@ -473,7 +504,10 @@
           <pre *ngFor="let line of frontend.console_log.slice(1)"class="text">{{line}}</pre>
           </div>
         </mat-tab>
-        <mat-tab label="Portal Log" *ngIf="frontend.data.error_ids"></mat-tab>
+        <mat-tab label="Server Log" *ngIf="frontend.test && frontend.test.has_logs">
+          <scenario [envData]="data[selectIndex]" [scenario]="frontend.test" [configure]="configure"> </scenario>
+
+        </mat-tab>
       </mat-tab-group>
     </as-split-area>    
     <as-split-area [visible]="data_type=='report' || (data_type=='test' && frontend && frontend.show_log == 'Hide Log') ">     

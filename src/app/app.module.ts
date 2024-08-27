@@ -25,13 +25,19 @@ import {MatChipsModule} from '@angular/material/chips';
 import {MatAutocompleteModule} from '@angular/material/autocomplete';
 import {MatDialogModule} from '@angular/material/dialog';
 import {DialogChangeDialog} from './dialog.component';
+import { LogUnitComponent } from './log.component';
+import { LogGroupComponent } from './group.component';
+import { ScenarioComponent } from './scenario.component';
 
 
 
 @NgModule({
   declarations: [
     AppComponent,
-    DialogChangeDialog
+    DialogChangeDialog,
+    LogUnitComponent,
+    LogGroupComponent,
+    ScenarioComponent
   ],
   imports: [
     HttpClientModule,

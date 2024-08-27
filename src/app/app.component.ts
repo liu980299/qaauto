@@ -106,6 +106,7 @@ export class AppComponent implements OnInit {
   last_build = true;
   job_url = "";
   keepAlive:any;
+  log_analysis: boolean;
 
   constructor(public dialog:MatDialog, private dataService: DataService,private _renderer2: Renderer2
     ){
@@ -158,7 +159,7 @@ export class AppComponent implements OnInit {
         var context_data = {name:"Pages",data:new MatTreeNestedDataSource<TestNode>(),selected:false, search:""};
         var cucumber_data = {name:"Tests",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};
         var cases_data = {name:"Jiras",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};
-        var tasks_data = {name:"Tasks",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};
+        var tasks_data = {name:"Tasks",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};        
         var tests:TestNode[] = [];
         var pages:TestNode[] = [];
         var cases:TestNode[] = [];
@@ -294,7 +295,7 @@ export class AppComponent implements OnInit {
         context_data.data.data = pages;
         tasks_data.data.data = tasks;
         var env_data:any = {name:data[key].Env,perspectives:[cucumber_data,context_data,cases_data,tasks_data],selected:false,jiras:[],
-            timelines:{containers:[],start_time:"",end_time:"",duration:0,value:0,headers:['name','start_time','end_time','duration','total','failed'],data_source:[]},scenarios:scenarios};
+            timelines:{containers:[],start_time:"",end_time:"",duration:0,value:0,headers:['name','start_time','end_time','duration','total','failed'],data_source:[],selected_accounts:[]},scenarios:scenarios,};
         if (data[key].jiras){
           env_data.jiras = data[key].jiras;
         }
@@ -369,8 +370,12 @@ export class AppComponent implements OnInit {
       this.setReportData();    
       this.setJiraRefs();
       this.fetchTasks();
-     });    
-     this.keepAlive = setInterval(this.checkTaskVersion.bind(this),30000);
+      this.fetch_log_analysis();
+     });
+     if (location.origin.toLowerCase().indexOf("localhost") < 0){
+      this.keepAlive = setInterval(this.checkTaskVersion.bind(this),30000);
+     }    
+     
   }
 
   pass_test(node:any){
@@ -421,6 +426,162 @@ export class AppComponent implements OnInit {
         console.log(this.data);
       })
 
+    }
+  }
+
+  fetch_log_analysis(){
+    if (location.href.indexOf("localhost") >=0){
+      this.configure.log_analysis_url = "/assets/";
+      this.dataService.getZip("/assets/log_analysis.zip","log_analysis.json").then((data)=>{
+        this.loadLogAnalysis(data);    })
+  
+    }else{
+      
+      if (this.configure.log_analysis && this.configure.log_analysis.build){
+        this.dataService.getData(this.configure.log_analysis.job+"/lastBuild/api/json").subscribe((data)=>{
+          this.configure.log_analysis.lastBuild = data.number;
+          this.configure.log_analysis_url = this.configure.log_analysis.job + "/" + this.configure.log_analysis.build + "/tasks/";
+          this.dataService.getZip(this.configure.log_analysis_url+ "log_analysis.zip","log_analysis.json").then((data)=>{
+            this.loadLogAnalysis(data);    }).catch((e)=>{
+              if (this.configure.log_analysis.build < this.configure.log_analysis.lastBuild){
+                this.configure.log_analysis.build++;
+                this.fetch_log_analysis();                
+              }
+            });
+  
+        });
+      }
+    }
+
+  }
+  loadLogAnalysis(data:any){
+    console.log(data);
+    for(let envData of data){
+      for (let env of this.data){
+        if (envData.env == env.name && (env.start_time.indexOf(envData.test_date)>=0 || location.origin.indexOf("local")>0)){
+          this.log_analysis = true;
+          if (env.perspectives.length == 4){
+            var errorData = {name:"Errors",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};            
+            var duplicatedData = {name:"Duplicates",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};
+            env.perspectives.push(errorData);
+            env.perspectives.push(duplicatedData);
+            env.tests = envData.tests;
+            env.main_log = envData.main_log
+            env.stacks ={};
+            var error_nodes:TestNode[] = [];
+            var duplicate_nodes:TestNode[] = [];
+            var features:any = {}
+            for (let scenario_name in env.tests){
+                var scenario = env.tests[scenario_name];
+                this.loadScenario(scenario,env);
+                if (scenario.duplicated){
+                  if (!(scenario.feature in features)){
+                    var feature_node:TestNode = {name:scenario.feature,children:[],data:{type:"duplicates"}};
+                    features[scenario.feature] = feature_node;
+                    duplicate_nodes.push(feature_node);
+                  }
+                  var feature_data = features[scenario.feature];
+                  var scenario_node:TestNode = {name:scenario.name,children:[],data:scenario};
+                  scenario_node.data.type = "scenarios";
+                  feature_data.children.push(scenario_node);
+                }
+            }        
+            for (let log_name in envData.errors){
+              var log_error_node:TestNode = {name:log_name,children:[],data:{type:"errors"}};
+              error_nodes.push(log_error_node);
+              var log_errors = envData.errors[log_name];
+              this.dataService.getZip(this.configure.log_analysis_url + log_name + "/stacks.zip",log_name+"/stacks.json").then(
+                (data)=>{
+                  env.stacks[log_name] = data;
+                }
+                );
+              for (let category in log_errors){
+                if (category == 'fatal' && log_errors['fatal'].length > 0){
+                  var fatal_node:TestNode={name:"fatal",children:[],data:{type:"errors"}};
+                  log_error_node.children?.push(fatal_node);
+                  for (var error of log_errors['fatal']){
+                    var error_node:TestNode = {name:error.name,children:[],data:{type:"errors"}};
+                    error_node.data = error;
+                    error_node.data.log_file = log_name;
+                    fatal_node.children?.push(error_node);
+                  }
+
+                }
+                else{
+                  var category_node:TestNode ={name:category,children:[],data:{type:"errors"}};
+                  var sub_total = 0;                
+                  for (var error_type in log_errors[category]){
+                    var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors"}};                    
+                    var error_list = log_errors[category][error_type];
+                    var scenario_dict:any = {};
+                    var session_dict:any = {}
+                    for (let error of error_list){
+                        if (error.scenario){
+                          if (error.scenario in scenario_dict){
+                            scenario_dict[error.scenario].num += 1;
+                          }else{
+                            scenario_dict[error.scenario] = {num:1,error:error};
+                          }                          
+                        }else{
+                          var error_name = error.thread;  
+                          if (error.user){
+                            error_name = error.user;
+                          }                        
+                          if (error.session){                                                        
+                            if (!(error.session in session_dict)){
+                              session_dict[error.session] = {name:error_name,num:0,data:error}                              
+                            }                            
+                            session_dict[error.session].num += 1;
+                            error.type = "sessions"
+                          }else{
+                            error.type = "logs"
+                            var error_node:TestNode = {name:error_name,children:[],data:{type:error.type}};
+                            error_node.data = error;
+                            error_node.data.log_file = log_name;                          
+                            error_type_node.children?.push(error_node);    
+                          }
+                        }                        
+                    }
+                    for (let session_id in session_dict){
+                      var error_node:TestNode = {name:session_dict[session_id].name,children:[],data:session_dict[session_id].data};
+                      error_node.data.type="sessions";
+                      error_node.data.log_file = log_name;
+                      if (session_dict[session_id].num > 1){
+                        error_node.name += " (" + session_dict[session_id].num +")";                                                
+                      }
+                      error_type_node.children?.push(error_node);  
+                    }
+                    for (let scenario in scenario_dict){
+                      var error_node:TestNode = {name:scenario,children:[],data:{type:"scenarios",name:scenario}};
+
+                      if (scenario_dict[scenario].num > 1){
+                        error_node.name += " (" + scenario_dict[scenario].num + ")";
+                      }
+                      error_node.data.is_new = true;
+                      if (scenario in env.scenarios){
+                        error_node.data.is_new = false;
+                      }
+                      error_node.data.log_file = log_name
+                      error_node.data.error = scenario_dict[scenario].error
+                      error_type_node.children?.push(error_node);  
+                    }
+                    error_type_node.name = error_type + "(" + error_list.length +")";
+                    sub_total += error_list.length;
+                    category_node.children?.push(error_type_node);
+                  }
+                  category_node.name = category_node.name + "(" + sub_total + ")";
+                  if (category_node.children && category_node.children.length > 0){
+                    log_error_node.children?.push(category_node);
+                  }
+                  
+                }
+              }
+            }
+            errorData.data.data = error_nodes;
+            duplicatedData.data.data = duplicate_nodes;
+          }
+        }
+      }
     }
 
   }
@@ -1058,8 +1219,23 @@ export class AppComponent implements OnInit {
         for (let scenario of container.scenarios){
           if(scenario.start_time <= current_time && scenario.end_time >= current_time){
             container.scenario = scenario;
-            for (let username of scenario.test_users){
-              timelines.account_list.push(username);
+            for (let username in scenario.test_users){
+              var test_user_data = scenario.test_users[username];
+              if ( test_user_data instanceof Array){
+                for (let item of test_user_data){
+                  if (item.start_time <=current_time && item.end_time > current_time){
+                    timelines.account_list.push(username)
+                    scenario.test_user = username;
+                    break;
+                  }
+                }
+              }else{
+                if (test_user_data.start_time <= current_time && test_user_data.end_time > current_time){
+                  timelines.account_list.push(username);
+                  scenario.test_user = username;
+                }
+              }
+              // timelines.account_list.push(username);
             }            
             for(let context of scenario.contexts){
               if(context.start_time <= current_time && context.end_time >= current_time){
@@ -1256,7 +1432,13 @@ export class AppComponent implements OnInit {
       console.log(this.jira);
     }else if(node.data.type && node.data.type == 'tasks'){
       this.showTask(node);
-    } 
+    }else if(node.data.type && node.data.type == 'scenarios'){
+      this.setScenario(node);
+    }else if(node.data.type && node.data.type == 'sessions'){
+      this.setSession(node);
+    }else if(node.data.type && node.data.type == 'logs'){
+      this.setLogs(node);
+    }
     else{
       this.data_type = 'test';
       var id_names= node.data.url.split("/");
@@ -1273,6 +1455,236 @@ export class AppComponent implements OnInit {
       );
 
     }
+  }
+
+  setWorker(session:any,worker:any){
+    var unitType = worker["type"];
+    if (session[unitType]){   
+      for (let item of session[unitType]){
+        if (item.id == worker.id){
+          worker.msg = item.msg;
+          console.log(worker);
+        }
+    }
+}
+  }
+
+  openWorker(worker:any){
+    if (!this.data[this.selectIndex].sessions){
+      this.data[this.selectIndex].sessions = {};
+    }
+    if (!this.data[this.selectIndex].sessions[worker.log_file]){
+      this.data[this.selectIndex].sessions[worker.log_file]={}
+    }
+    if (worker.session){
+      if (!this.data[this.selectIndex].sessions[worker.log_file][worker.session]){
+        this.dataService.getZip( this.configure.log_analysis_url + worker.log_file + "/" + worker.session + ".zip",worker.log_file + "/" + worker.session +"/session.json").then((data)=>{
+          this.data[this.selectIndex].sessions[worker.log_file][worker.session] = data;
+          this.setWorker(this.data[this.selectIndex].sessions[worker.log_file][worker.session],worker);
+        });
+        console.log(worker.data);
+      }else{
+        this.setWorker(this.data[this.selectIndex].sessions[worker.log_file][worker.session],worker);
+      }  
+    }
+  }
+  setLogs(log:any){
+    this.data_type="log";
+    if(!this.data[this.selectIndex].logs){
+      this.data[this.selectIndex].logs = {};
+    }
+    if (!(log.data.log_file in this.data[this.selectIndex].logs)){
+      this.data[this.selectIndex].logs[log.data.log_file] ={}      
+    }
+    var logs= this.data[this.selectIndex].logs[log.data.log_file]
+    if (!logs[log.name]){
+      logs[log.name] = {}
+    }
+    if (!logs[log.name][log.data.unknown]){
+      this.dataService.getZip(this.configure.log_analysis_url + log.data.log_file + "/unknown/" + log.name +".zip", log.data.log_file + "/unknown/" + log.name +"/"+log.data.unknown +".json").then((data)=>{
+          logs[log.data.unknown] = data;
+          this.frontend = data;             
+          this.setStackList(this.frontend,log.data.log_file,this.data[this.selectIndex]);        
+          }  
+        );            
+    }else{
+      this.frontend = logs[log.name][log.data.unknown];
+      this.setStackList(this.frontend,log.data.log_file,this.data[this.selectIndex]);
+    }
+    console.log(this.frontend);
+  }
+  setSession(session:any){
+    this.data_type="session";
+    if (!this.data[this.selectIndex].sessions){
+      this.data[this.selectIndex].sessions={}
+    }
+    if (!(session.data.log_file in this.data[this.selectIndex].sessions)){
+      this.data[this.selectIndex].sessions[session.data.log_file] ={}
+    }
+    if (!this.data[this.selectIndex].sessions[session.data.log_file][session.data.session]){
+      this.dataService.getZip( this.configure.log_analysis_url + session.data.log_file + "/" + session.data.session + ".zip",session.data.log_file + "/" + session.data.session +"/session.json").then((data)=>{        
+        this.frontend = data;             
+        if (this.frontend.worker){
+          for (let item of this.frontend.worker){
+            if(item.error && item.error.level && item.error.level == 'ERROR'){
+              item.hasError = true;
+              this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
+            }
+          }  
+        }
+        if (this.frontend.unknown){
+          for (let item of this.frontend.unknown){
+            if(item.error && item.error.level && item.error.level == 'ERROR'){
+              item.hasError = true;
+              this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
+            }
+          }  
+        }
+        if (this.frontend.error && this.frontend.error.stacks){
+            
+          this.setStackList(this.frontend,session.data.log_file,this.data[this.selectIndex]);          
+        }
+        this.data[this.selectIndex].sessions[session.data.log_file][session.data.session] = this.frontend;
+      });
+    }else{
+      this.frontend = this.data[this.selectIndex].sessions[session.data.log_file][session.data.session];
+
+    }
+    console.log(this.frontend);
+  }
+  setStackList(item:any,log_file:string,envData:any){
+    if (item.error.stacks){
+      item.stacks_list =[];
+      for (let exception in item.error.stacks){
+        var stack = item.error.stacks[exception];
+        stack.exception = exception;
+        if (item.log_file){
+          log_file = item.log_file
+        }
+        stack.log_file = log_file;
+        if (log_file in envData.stacks){
+          stack.msg = envData.stacks[log_file][exception][stack.index];        
+        }        
+        item.stacks_list.push(stack);
+      }
+    }
+
+  }
+
+  loadScenario(scenario:any,envData:any){
+    scenario.error_summary = [];
+    scenario.duplicate_summary = [];
+    if (scenario.steps){
+      var step_id = 0;
+      for (let step of scenario.steps){
+        step_id++;
+        step.id = "step_" + step_id;
+        var step_error:any = {name:step.name,errors:[]}
+        if (step.errors && step.duplicated){
+          step.badgeText = "D,E";
+        }else{
+          if (step.errors || step.sessions){
+            step.badgeText = "E";
+          }
+          if (step.duplicated){
+            step.badgeText = "D";
+          }
+
+        }
+        if (step.duplicated){
+          for (let api of step.duplicated){
+            this.setNameSteps(scenario.duplicate_summary,api,step);            
+          }
+        }
+        var errors:any = {};
+        if (step.errors){          
+          for (let error of step.errors){
+            this.setNameSteps(scenario.error_summary,error.name,step);
+            
+            if (step_error.errors.indexOf(error.name) < 0){
+              step_error.errors.push(error.name);
+            }            
+            if (error.worker){
+              errors[error.worker] = error;
+            }              
+          }
+        }
+        if (step.sessions){
+          for (let session of step.sessions){
+            this.setNameSteps(scenario.error_summary,session.error,step);
+            session.badgeText = "E";
+          }
+        }
+        if (step.workers){
+          scenario.has_logs = true;
+          step.worker_list  = [];
+          for(let api in step.workers){
+            for(let session_worker of step.workers[api]){
+              var item:any = {name:api,id:session_worker.id,session:session_worker.session,log_file:envData.main_log,type:"worker",start_time:session_worker.start_time}
+              step.worker_list.push(item);
+              if (step.duplicated && step.duplicated.indexOf(item.name) >=0 ){
+                item.duplicated = true;
+              }
+              if (step.errors && item.id in errors){
+                item.hasError = true;
+                item.error = errors[item.id];
+                this.setStackList(item,item.error.log_file,envData);
+              }
+              if (item.duplicated && item.hasError){
+                item.badgeText = "D,E";
+              }else{
+                if (item.duplicated){
+                  item.badgeText = 'D';
+                }
+                if (item.hasError){
+                  item.badgeText = 'E';
+                }
+              }
+            }          
+          }
+          step.worker_list.sort((a:any,b:any)=>a.start_time>b.start_time?1:-1);  
+        }
+        if (step.unknown){
+          for (let unknown of step.unknown){
+            unknown.name = unknown.thread;
+            unknown.type = "unknown";
+            if (unknown.error && unknown.error.stacks){
+              this.setStackList(unknown,unknown.error.log_file,envData)
+            }
+          }
+          step.unknown.sort((a:any,b:any)=>a.start_time>b.start_time?1:-1);
+        }  
+      }
+    }
+
+  }
+
+  setNameSteps(name_list:any,name:string,step:any){    
+    var target_steps= null;
+    for(let name_steps of name_list){
+      if (name_steps.name == name){
+        target_steps = name_steps;
+        break;
+      }
+    }
+    if (!target_steps){
+      target_steps = {name:name,steps:[]};
+      name_list.push(target_steps);
+    }
+    target_steps.steps.push(step);
+  }
+
+  setScenario(scenario:any){
+    this.data_type="scenario";
+    var scenario_name = scenario.data.name;
+    if (scenario_name in this.data[this.selectIndex].tests){
+      this.frontend = this.data[this.selectIndex].tests[scenario_name];
+      if (scenario.data.error && scenario.data.error.name){
+        this.frontend.error_text = scenario.data.error.name;
+      }
+      
+    }    
+    console.log(this.frontend);
   }
 
   searchPerspective(perspective:any){
@@ -1303,7 +1715,14 @@ export class AppComponent implements OnInit {
             for (var i = 0; i < search_res.length - 1; i++){
               this.treeControl.expand(search_res[i]);
             }
-            this.selectNode(search_res[search_res.length-1]);
+            var select_node = search_res[search_res.length-1];
+            if (search_res[search_res.length-1].children.length > 0){              
+              this.treeControl.expand(select_node);
+              document.getElementById(select_node.name.split('(')[0].replaceAll(' ','_'))?.scrollIntoView();
+            }else{
+              this.selectNode(search_res[search_res.length-1]);
+            }            
+            break;
           }
         }
       }
@@ -1318,11 +1737,11 @@ export class AppComponent implements OnInit {
           return search_res;
         }
       }
-    }else{
-      if (node.name.indexOf(search) >=0){
-        return [node]
-      }
-    }    
+    }
+    if (node.name.indexOf(search) >=0){
+      return [node]
+    }
+        
 
   }
   copyLink(){
@@ -1348,6 +1767,57 @@ export class AppComponent implements OnInit {
         this.frontend.show_history = "History";
         if (node.data.owner){
           this.frontend.owner = this.owners[node.data.owner];          
+        }
+        if (node.data.error_ids){
+          var env_name = this.data[this.selectIndex].name;          
+          node.data.error_data = [];
+          if (!node.data.error_table){
+            for (let error_id of node.data.error_ids){
+              var error_url = env_name + "_errors/" + error_id + ".json";
+              this.dataService.getData(error_url).subscribe({next:(data)=>{
+                node.data.error_data.push(data);
+                if (data.scenario && !node.data.error_headers){
+                  node.data.error_headers = ["time","step"]
+                  node.data.error_table =[]
+                  var steps = []
+                  for (let context of data.scenario.contexts){
+                    for(let step of context.steps){
+                      steps.push(step)
+                    }
+                  }
+                  for(let step of steps){
+                    var item:any = {};
+                    var values = step.split("|");
+                    item.time = values[0]
+                    item.step = values[1]
+                    node.data.error_table.push(item)
+                  }
+                }
+                node.data.error_headers.push(data.thread);
+                var data_source = node.data.error_table;
+                var current_step = 0
+                for (let msg of data.msg){
+                    var content = msg.split("[" + data.thread+"]")[1].trim()
+                    var log_time:string
+                    var log_content:string 
+                    var log_items= content.split(" ",1)
+                    log_time = log_items[0]
+                    log_content = content.substr(log_time.length)
+                    log_time = log_time.replace("T", " ")
+                    
+                    while(current_step < node.data.error_table.length - 1 && log_time > node.data.error_table[current_step + 1].time){
+                      current_step++;
+                    }
+                                                            
+                    if (!data_source[current_step][data.thread]){
+                      data_source[current_step][data.thread] = []
+                    }
+                    data_source[current_step][data.thread].push(log_time  + " " + log_content)
+                }
+              }})
+            }
+          }
+
         }
         if (node.data.assigned){
           this.frontend.assigned = this.owners[node.data.assigned];
@@ -1395,6 +1865,10 @@ export class AppComponent implements OnInit {
         //   this.frontend.img = "./assets/" + this.frontend.img;
         // }
         this.frontend.name = node.name;
+        var envData = this.data[this.selectIndex];
+        if (envData.tests && node.name in envData.tests){
+          this.frontend.test = envData.tests[node.name];
+        }
         this.backend = [];
         if (node.data.data.user_id){
           this.test_user_id = node.data.data.user_id;
@@ -1489,7 +1963,7 @@ export class AppComponent implements OnInit {
     for (let column in summary.data[0]){
       this.headers.push(column);
     }
-    this.datasources = summary.data;
+    this.datasources = summary.data.sort((a:any,b:any)=>(a["Started on"] > b["Started on"]?-1:1));
     for (let item of summary.data){
       this.barChartData.labels?.push(item["Started on"])
       failed_data.push(item.failed);
@@ -1521,7 +1995,7 @@ export class AppComponent implements OnInit {
     for (let env_data of this.data){
       for (let perspective of env_data.perspectives){
         for(let test of perspective.data.data){
-          if (test.name.indexOf("Automation Test") >=0 || perspective.name == "Pages"){
+          if (test.name.indexOf("Automation Test") >=0 || perspective.name == "Pages" ||perspective.name=="Errors"||perspective.name=="Duplicates"){
               for(let job of test.children){
                 for(let feature of job.children){
                   for(let scenario of feature.children){
@@ -2029,10 +2503,10 @@ export class AppComponent implements OnInit {
       var c_checked = true;
       var some = false;
       for (let container of context.containers){
-        if (container.scenario.test_users.indexOf(account)>=0){
+        if (account in container.scenario.test_users){
           var checked = false;
           for (let selected_account of selected_accounts){
-            if (container.scenario.test_users.indexOf(selected_account) >= 0){
+            if (selected_account in container.scenario.test_users){
               checked = true;
             }  
           }
@@ -2056,7 +2530,7 @@ export class AppComponent implements OnInit {
       var checked = true;
       var some = context.some;
       for (let container of context.containers){        
-        if (container.scenario.test_users.indexOf(account)>=0){
+        if (account in container.scenario.test_users){
           container.checked = true;
         }
         if (!container.checked){

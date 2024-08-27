@@ -1,0 +1,62 @@
+<H2 style="display:inline-flex;"><a  *ngIf="scenario.url" [href]="scenario.url" target="_blank">{{scenario.name}}</a></H2>
+<div>
+<button mat-raised-button *ngIf = "scenario.error_summary.length > 0" (click)="setErrorButton()" color="primary" style="margin-right: 10px;">{{buttonTxtErrors}}</button>
+<button mat-raised-button *ngIf = "scenario.duplicate_summary.length > 0" (click)="setDuplicateButton()" color="primary" style="margin-right: 10px;">{{buttonTxtDuplicated}}</button>
+</div>
+<mat-card  style="border:solid 1px black;" *ngIf="showErrors">
+  <mat-card-header> 
+    <mat-card-title>                    
+      Errors Summary
+    </mat-card-title>                  
+  </mat-card-header>
+  <mat-expansion-panel *ngFor="let error of scenario.error_summary">
+    <mat-expansion-panel-header >
+      <mat-panel-title>{{error.name}}</mat-panel-title>
+    </mat-expansion-panel-header>
+    <mat-accordion multi="false" >
+      <li *ngFor="let step of error.steps"><button mat-button color="primary" (click)="gotoStep(step)"> {{step.name}}</button></li>
+    </mat-accordion>
+  </mat-expansion-panel>
+</mat-card>
+
+<mat-card  style="border:solid 1px black;" *ngIf="showDuplicated">
+  <mat-card-header> 
+    <mat-card-title>                    
+      Duplicates Summary
+    </mat-card-title>                  
+  </mat-card-header>
+  <mat-expansion-panel *ngFor="let duplicate of scenario.duplicate_summary">
+    <mat-expansion-panel-header >
+      <mat-panel-title>{{duplicate.name}}</mat-panel-title>
+    </mat-expansion-panel-header>
+    <mat-accordion multi="false" >
+      <li *ngFor="let step of duplicate.steps"><button mat-button color="primary" (click)="gotoStep(step)"> {{step.name}}</button></li>
+    </mat-accordion>
+  </mat-expansion-panel>
+</mat-card>
+
+<mat-accordion multi *ngFor="let step of scenario.steps"> 
+
+  <mat-expansion-panel *ngIf="step.worker_list||step.sessions" [id]="step.id" >
+    <mat-expansion-panel-header >
+      <mat-panel-title [matBadge]="step.badgeText" [matBadgeHidden]="!step.badgeText" matBadgeColor="accent"  matBadgeSize="small">
+        <p [ngClass] = "{'errorText':hasStepError(step)}">{{step.start_time}} -- {{step.name}} </p>
+      </mat-panel-title>
+    </mat-expansion-panel-header>
+    <mat-accordion multi="false" >      
+      <log-group [envData] = "envData" [logGroup]="step.sessions" [configure]="configure"></log-group>  
+    </mat-accordion>
+    
+    <mat-accordion multi="false" >      
+      <log-group [envData] = "envData" [logGroup]="step.worker_list" [configure]="configure"></log-group>  
+    </mat-accordion>
+
+    <mat-accordion multi="false" *ngIf="step.unknown">      
+      <log-group [envData] = "envData" [logGroup]="step.unknown" [configure]="configure"></log-group>  
+    </mat-accordion>
+
+</mat-expansion-panel>
+<P *ngIf="!step.worker_list&&!step.unknown&&!step.sessions" style="background-color: grey;color:white">{{step.start_time}} -- {{step.name}} </P>
+
+</mat-accordion>
+
