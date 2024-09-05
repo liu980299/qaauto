@@ -81,10 +81,18 @@ export function lengthValidator(): ValidatorFn {
         for (let target of new_item.target){
             if (this.target == 'Step'){
                 for (let duplicate of new_item.Duplicate){
-                    if (duplicate in target.expected){
-                        target.expected[duplicate] = true;
-                        target.disabled[duplicate] = true;                        
-                        getBadgeText(target);
+                    if (duplicate == 'All'){
+                        for (let item in target.expected){
+                            target.expected[item] = true;
+                            target.disabled[item] = true;
+                        }
+                        getBadgeText(target)
+                    }else{
+                        if (duplicate in target.expected){
+                            target.expected[duplicate] = true;
+                            target.disabled[duplicate] = true;                        
+                            getBadgeText(target);
+                        }    
                     }
                 }                
             }else{

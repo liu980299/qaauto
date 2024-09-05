@@ -1,4 +1,4 @@
-import {Component,Input} from '@angular/core';
+import {Component,Input, OnInit} from '@angular/core';
 import { DataService } from './data.component';
 
 @Component({    
@@ -6,15 +6,31 @@ import { DataService } from './data.component';
     templateUrl:'group.component.html',
 
 })
-export class LogGroupComponent{
+export class LogGroupComponent implements OnInit{
     @Input() envData:any;
     @Input() logGroup:any;
     @Input() step:any;
     @Input() configure:any;    
     @Input() scenario:any;
+    disabled = false;
     constructor(private dataService:DataService){
         this.dataService = dataService;
     }
+  ngOnInit(): void {
+  }
+
+  getNextLogs(){
+    var previous = this.step.cursor;
+    this.step.cursor += 100;
+    if (this.step.cursor >= this.step.worker_list.length - 1){
+      this.step.cursor = this.step.worker_list.length - 1;
+      this.disabled = true;
+    }
+    for (var i = previous; i < this.step.cursor; i++ ){
+      this.logGroup.push(this.step.worker_list[i]);
+    }
+      
+  }
     openItem(worker:any){
         if (!this.envData.sessions){
           this.envData.sessions = {};

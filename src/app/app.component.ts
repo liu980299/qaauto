@@ -11,7 +11,7 @@ import {ErrorStateMatcher} from '@angular/material/core';
 import { Observable, map, startWith } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { DialogChangeDialog } from './dialog.component';
-import { ScenarioComponent } from './scenario.component';
+import { getBadgeText, getErrorBadgeText, getExpectedDupicates, getExpectedError, ScenarioComponent } from './scenario.component';
 import { SummaryComponent } from './summary.component';
 
 declare var report_url: any,jira_url:any;
@@ -114,8 +114,12 @@ export class AppComponent implements OnInit, AfterViewInit  {
   last_build = true;
   job_url = "";
   keepAlive:any;
-  errors_cfg:any;
-  duplicates_cfg:any;
+  infinity_calls:any=[];
+  errors_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Scenario","Comment"],
+  single_list:["Error"],multiple_list:["Scenario"]};
+  duplicates_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Step","Scenario","Duplicate","Comment"],
+  single_list:["Step"],multiple_list:["Scenario","Duplicate"]}; 
+;
   log_analysis: boolean;
   summaryPage : SummaryComponent;
   scenario : ScenarioComponent;
@@ -528,12 +532,27 @@ export class AppComponent implements OnInit, AfterViewInit  {
             var duplicate_nodes:TestNode[] = [];
             var api_list:any = {}
             env.duplicate_steps = 0;
+            var checked_errors =  env.errors_cfg.queues.checked;
+            var checked_duplicates = env.duplicates_cfg.queues.checked;
             for (let scenario_name in env.tests){
                 var scenario = env.tests[scenario_name];
                 this.loadScenario(scenario,env);
                 env.duplicate_steps += scenario.duplicate_steps; 
                 if (scenario.error_summary && scenario.error_summary.length > 0){
                   for (let error of scenario.error_summary){
+                    if (checked_errors.length > 0){
+                      for (let rule of checked_errors){
+                        var items = rule.Error.split("{}");
+                        if (items.filter((item:string)=>error.name.indexOf(item)<0).length == 0){
+                          if (rule.Scenario.indexOf(scenario.name) >= 0 || rule.Scenario.indexOf('All') >=0 ){
+                            error.expected = true;
+                            for (let step of error.steps ){
+                              getErrorBadgeText(step);
+                            }                            
+                          }
+                        }
+                      }
+                    }
                     if (!(error.name in this.errors_cfg.data)){
                       env.errors_cfg.data[error.name] = {}
                     }
@@ -546,12 +565,27 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   }
                 }               
                 if (scenario.duplicated){
-                  for (let api of scenario.duplicate_summary){
+                  for (let api of scenario.duplicate_summary){                    
                     for (let step of api.steps){
-                      var step_name = step.name.trim().replace(step.name.split(" ",1)[0] + " ","");
                       if (!step.expected){
                         step.expected = {};    
                         step.disabled = {};                    
+                      }
+
+                      var step_name = step.name.trim().replace(step.name.split(" ",1)[0] + " ","");
+                      step.expected[api.name] = false;
+                      if (checked_duplicates.length > 0){
+                        for (let rule of checked_duplicates){
+                          var items = rule.Step.split("{}");
+                          if (items.filter((item:string)=>step_name.indexOf(item)<0).length == 0){
+                            if ((rule.Scenario.indexOf(scenario.name) >= 0 || rule.Scenario.indexOf('All') >=0) &&
+                                (rule.Duplicate.indexOf(api.name) >= 0|| rule.Duplicate.indexOf('All') >=0 )){
+                                  step.expected[api.name] = true;
+                                  step.disabled[api.name] = true;
+                                  getBadgeText(step);
+                            }
+                          }
+                        }
                       }
                       if (!(env.duplicates_cfg.data[step_name])){
                         env.duplicates_cfg.data[step_name] = {};
@@ -561,7 +595,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                         env.duplicates_cfg.data[step_name][scenario.name] = {};
                       }
   
-                      step.expected[api.name] = false;
+                      
                       // if (step.name.indexOf('"') >= 0){                        
                       //   var items = step.name.split('"').filter((v: any,i: number)=>!(i%2))
                       //   step_name = items.join("{}");
@@ -582,6 +616,19 @@ export class AppComponent implements OnInit, AfterViewInit  {
                         scenario_node.data.type = "scenarios";
                         api_data.data.scenarios[scenario.name] = scenario;  
                         api_data.children.push(scenario_node);  
+                        if (env.tests[scenario.name].infinite_calls){
+                          scenario_node.data.infinite_calls = env.tests[scenario.name].infinite_calls;
+                          for (let item of scenario_node.data.infinite_calls_list){
+                            if (api.name == item.name){
+                              api_data.data.infinite_calls = true;
+                              if (this.infinity_calls.indexOf(env.name) < 0){
+                                this.infinity_calls.push(env.name);                                
+                              }                             
+                              break; 
+                            }
+                          }
+                        }
+  
                       }
                     }                    
                   }   
@@ -675,12 +722,19 @@ export class AppComponent implements OnInit, AfterViewInit  {
                           error_node.data.error = error
                         }
                       }
-                      
-                      error_type_node.children?.push(error_node);  
+                      if (!error_node.data.error || !error_node.data.error.expected){
+                        if (!error_node.data.error){
+                          console.log(error_node);
+                        }
+                        
+                        error_type_node.children?.push(error_node);  
+                      }                      
                     }
                     error_type_node.name = error_type + "(" + error_list.length +")";
-                    sub_total += error_list.length;
-                    category_node.children?.push(error_type_node);
+                    if (error_type_node.children?.length && error_type_node.children?.length > 0){
+                      sub_total += error_list.length;
+                      category_node.children?.push(error_type_node);
+                    }
                   }
                   category_node.name = category_node.name + "(" + sub_total + ")";
                   if (category_node.children && category_node.children.length > 0){
@@ -695,8 +749,13 @@ export class AppComponent implements OnInit, AfterViewInit  {
             }
             errorData.data.data = error_nodes;
             duplicatedData.data.data = duplicate_nodes;
+            getExpectedError(env);
+            getExpectedDupicates(env);
           }
         }
+      }
+      if (this.infinity_calls.length > 0){
+        this.error_message = "Detected possible infinite calls in " + this.infinity_calls.join(",") + ", please select Duplicates in menu!"
       }
   }
   checkConfig(cfg:string){
@@ -709,7 +768,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
 
   }
-  loadTasks(data:any){    
+  loadTasks(data:any){        
     if (data.build == this.build || location.origin.indexOf("local") > 0){
       this.updateJiras(data.jiras);
     }
@@ -730,8 +789,10 @@ export class AppComponent implements OnInit, AfterViewInit  {
                 var scenario_obj = task.scenarios[scenario]
                 var scenario_data = envData.scenarios[scenario];
                 scenario_data.data.comments = scenario_obj.comments;                
-                if (scenario_obj.history){
-                  scenario_data.data.history = scenario_obj.history;
+                if (scenario_obj.is_monitored){
+                  if (scenario_obj.history){
+                    scenario_data.data.history = scenario_obj.history;
+                  }                  
                   scenario_data.data.is_monitored = true;
                   if (scenario_data.data.temp_comment){
                     scenario_data.data.temp_comment.is_monitored = true;
@@ -754,7 +815,26 @@ export class AppComponent implements OnInit, AfterViewInit  {
           }
           envData.perspectives[3].data.data = task_nodes;
         }
-      }  
+      }      
+    }
+    this.loadCfg(data);
+  }
+  loadCfg(data:any){
+    if (data.errors_cfg){
+      var index = 1;
+      for (let item of data.errors_cfg){
+        item.id = index;
+        index++;
+        this.errors_cfg.queues.checked.push(item);
+      }       
+    }
+    if (data.duplicates_cfg){
+      var index = 1;
+      for (let item of data.duplicates_cfg){
+        item.id = index;
+        index++;
+        this.duplicates_cfg.queues.checked.push(item);
+      }       
     }
 
   }
@@ -1139,8 +1219,8 @@ export class AppComponent implements OnInit, AfterViewInit  {
       }
     }
     if (this.changeErrors > 0){
-      changes.error_cfgs =[]
-      this.addQueueItem(this.errors_cfg.queues,changes.error_cfgs);
+      changes.errors_cfg =[]
+      this.addQueueItem(this.errors_cfg.queues,changes.errors_cfg);
     }
     if (this.changeDuplicates > 0){
       changes.duplicates_cfg =[]
@@ -1256,8 +1336,10 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
     if(workspace == "Errors"||workspace=="Duplicates"){
       this.clearNodes();
+      this.data_type = "report";
       if (this.summaryPage){
         this.summaryPage.reset();        
+
       }      
       this.node = null;
     }
@@ -1543,9 +1625,11 @@ export class AppComponent implements OnInit, AfterViewInit  {
   setWorkspace(workspace:string){
     if (workspace != this.workspace){
       this.workspace = workspace;      
-      if (this.isErrorsOrDuplicates(this.workspace)&&!this.isErrorsOrDuplicates(workspace)){
+      if (this.isErrorsOrDuplicates(this.workspace)){
         this.data_type = "report";
+        this.enableSummary(workspace);
         this.node = null;
+        this.frontend = null;
       }      
     }
     
@@ -1752,21 +1836,36 @@ export class AppComponent implements OnInit, AfterViewInit  {
     if (!this.data[this.selectIndex].sessions[session.data.log_file][session.data.session]){
       this.dataService.getZip( this.configure.log_analysis_url + session.data.log_file + "/" + session.data.session + ".zip",session.data.log_file + "/" + session.data.session +"/session.json").then((data)=>{        
         this.frontend = data;             
-        if (this.frontend.worker){
-          for (let item of this.frontend.worker){
-            if(item.error && item.error.level && item.error.level == 'ERROR'){
-              item.hasError = true;
-              this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
+        if (this.frontend._contents){
+          for (let content of this.frontend._contents){
+            if (this.frontend[content]){
+              for (let item of this.frontend[content]){
+                if(item.error && item.error.level && item.error.level == 'ERROR'){
+                  item.hasError = true;
+                  this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
+                }
+              }    
             }
-          }  
-        }
-        if (this.frontend.unknown){
-          for (let item of this.frontend.unknown){
-            if(item.error && item.error.level && item.error.level == 'ERROR'){
-              item.hasError = true;
-              this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
-            }
-          }  
+  
+          }
+        }else{
+          if (this.frontend.worker){
+            for (let item of this.frontend.worker){
+              if(item.error && item.error.level && item.error.level == 'ERROR'){
+                item.hasError = true;
+                this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
+              }
+            }  
+          }
+          if (this.frontend.unknown){
+            for (let item of this.frontend.unknown){
+              if(item.error && item.error.level && item.error.level == 'ERROR'){
+                item.hasError = true;
+                this.setStackList(item,session.data.log_file,this.data[this.selectIndex]);
+              }
+            }  
+          }
+  
         }
         if (this.frontend.error && this.frontend.error.stacks){
             
@@ -1803,7 +1902,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
     scenario.error_summary = [];
     scenario.duplicate_summary = [];
     scenario.step_summary = {};
-    scenario.duplicate_steps = 0;
+    scenario.duplicate_steps = 0;    
     if (scenario.steps){
       var step_id = 0;
       for (let step of scenario.steps){
@@ -1816,7 +1915,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
           scenario.step_summary[step.name].push(step.id);
         }
         var step_error:any = {name:step.name,errors:[]}
-        if (step.errors && step.duplicated){
+        if ((step.errors ||step.sessions) && step.duplicated){
           step.badgeText = "D,E";          
         }else{
           if (step.errors || step.sessions){
@@ -1841,8 +1940,16 @@ export class AppComponent implements OnInit, AfterViewInit  {
             if (step_error.errors.indexOf(error.name) < 0){
               step_error.errors.push(error.name);
             }            
-            if (error.worker){
-              errors[error.worker] = error;
+            if (error.type){
+              if (error[error.type]){
+                errors[error.type + error[error.type]] = error;
+              }else{
+                if (error.api && error.worker){
+                  errors["worker" + error.worker] = error;
+                }
+                
+              }
+              
             }              
           }
         }
@@ -1856,15 +1963,23 @@ export class AppComponent implements OnInit, AfterViewInit  {
           scenario.has_logs = true;
           step.worker_list  = [];
           for(let api in step.workers){
+            if (step.workers[api].length > 1000){
+              step.infinite_calls = true;
+              scenario.infinite_calls = step;
+              if (!scenario.infinite_calls_list){
+                scenario.infinite_calls_list = [];
+              }              
+              scenario.infinite_calls_list.push({name:api,num:step.workers[api].length})  
+            }
             for(let session_worker of step.workers[api]){
-              var item:any = {name:api,id:session_worker.id,session:session_worker.session,log_file:envData.main_log,type:"worker",start_time:session_worker.start_time}
+              var item:any = {name:api,id:session_worker.id,session:session_worker.session,log_file:envData.main_log,type:session_worker.type,start_time:session_worker.start_time}
               step.worker_list.push(item);
               if (step.duplicated && step.duplicated.indexOf(item.name) >=0 ){
                 item.duplicated = true;
               }
-              if (step.errors && item.id in errors){
+              if (step.errors && (item.type + item.id) in errors){
                 item.hasError = true;
-                item.error = errors[item.id];
+                item.error = errors[item.type + item.id];
                 this.setStackList(item,item.error.log_file,envData);
               }
               if (item.duplicated && item.hasError){
@@ -1879,7 +1994,14 @@ export class AppComponent implements OnInit, AfterViewInit  {
               }
             }          
           }
-          step.worker_list.sort((a:any,b:any)=>a.start_time>b.start_time?1:-1);  
+          step.worker_list.sort((a:any,b:any)=>a.start_time>b.start_time?1:-1);
+          if (step.infinite_calls){
+            step.logGroup = []
+            step.cursor = 100;
+            for (var i = 0; i < step.cursor; i++){
+                step.logGroup.push(step.worker_list[i]);
+            }
+          }  
         }
         if (step.unknown){
           for (let unknown of step.unknown){

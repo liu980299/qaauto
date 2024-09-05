@@ -56,7 +56,8 @@
         <mat-tree [dataSource]="perspective.data" [treeControl]="treeControl" class="qaauto-tree" >
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
-            <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unassigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>            
+            <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unassigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>
+            <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
             <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0))"
             [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && !node.data.is_new"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
@@ -77,6 +78,7 @@
                     {{treeControl.isExpanded(node) ? 'expand_more' : 'chevron_right'}}
                   </mat-icon>
                 </button>
+                <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
                 <span *ngIf="perspective.name!='Tasks'">{{node.name}}</span>
                 <button *ngIf="perspective.name=='Tasks'" [matBadge]="node.data.task_changes" [matBadgeHidden]="node.data.task_changes==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
               </div>
@@ -407,10 +409,14 @@
         </div>
         <div style="display: block;height: 100%;" *ngIf="data_type=='session' && frontend">       
           <H2 style="display:inline-flex;" *ngIf="frontend.user">User : {{frontend.user}}</H2>
-          <div *ngIf="frontend.worker">
-          <H3 >Known APIs</H3>
-          <log-group [envData]="data[selectIndex]" [logGroup]="frontend.worker" [configure]="configure"></log-group>
-    
+          <div *ngIf="frontend._contents">
+            <div *ngFor="let content of frontend._contents">
+          <div *ngIf="frontend[content]">    
+          <H3 >{{content}}</H3>
+          <log-group [envData]="data[selectIndex]" [logGroup]="frontend[content]" [configure]="configure"></log-group>
+           </div> 
+           </div>
+
            </div>
            <div *ngIf="frontend.unknown">
             <H3 >Log Units</H3>

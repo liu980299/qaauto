@@ -6,6 +6,6 @@
     </mat-expansion-panel-header>
     <mat-accordion>
       <log-unit [stacks]="envData.stacks" [logUnit]="worker"></log-unit>    
-    </mat-accordion>
-                        
+    </mat-accordion>                            
 </mat-expansion-panel>
+<button mat-button (click)="getNextLogs()" [disabled]="disabled" *ngIf="step && step.infinite_calls">Get Next 100 Log Units</button>

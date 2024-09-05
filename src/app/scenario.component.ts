@@ -1,4 +1,4 @@
-import {Component,EventEmitter,Input, Output} from '@angular/core';
+import {Component,EventEmitter,Input, OnInit, Output} from '@angular/core';
 
 export function getErrorBadgeText(step:any){    
     var expected_error = true;
@@ -108,10 +108,19 @@ export function getExpectedError(envData:any){
         if (scenario.error_summary.length > 0){
             for(let error of scenario.error_summary){
                 if (error.expected){
-                    envData.expected_errors += error.steps.length;
+                    var error_name = error.name
+                    for (let step of error.steps){
+                        var error_ids:any = {};
+                        for (let step_error of step.errors){
+                            if (step_error.name == error_name && !(step_error.id in error_ids) ){
+                                error_ids[step_error.id] = step_error;
+                                envData.expected_errors++;
+                            }
+                        }
+                        console.log(error_ids);
+                    }                     
                 }
             }
-
         }
     }
 
@@ -169,7 +178,9 @@ export function getNewId(queue:any){
     styleUrls: ['scenario.component.css']
 
 })
-export class ScenarioComponent {
+export class ScenarioComponent  implements OnInit {
+    ngOnInit(): void {
+    }
     @Input() scenario:any;
     @Input() envData:any;
     @Input() configure:any;

@@ -1,5 +1,8 @@
 <H2 style="display:inline-flex;"><a  *ngIf="scenario.url" [href]="scenario.url" target="_blank">{{scenario.name}}</a></H2>
 <div>
+<H3 *ngIf="scenario.infinite_calls" style="color:red">Detected possible infinited calls !
+  <li *ngFor="let item of scenario.infinite_calls_list" > {{item.name}} called {{item.num}} times</li>
+</H3>
 <button mat-raised-button *ngIf = "scenario.error_summary.length > 0" (click)="setErrorButton()" color="primary" style="margin-right: 10px;">{{buttonTxtErrors}}</button>
 <button mat-raised-button *ngIf = "scenario.duplicate_summary.length > 0" (click)="setDuplicateButton()" color="primary" style="margin-right: 10px;">{{buttonTxtDuplicated}}</button>
 </div>
@@ -39,7 +42,7 @@
 
 <mat-accordion multi *ngFor="let step of scenario.steps"> 
 
-  <mat-expansion-panel *ngIf="step.worker_list||step.sessions" [id]="step.id" >
+  <mat-expansion-panel *ngIf="step.worker_list||step.sessions||step.unknown" [id]="step.id" >
     <mat-expansion-panel-header >
       <mat-panel-title [matBadge]="step.badgeText" [matBadgeHidden]="!step.badgeText" matBadgeColor="accent"  matBadgeSize="small">
         <p [ngClass] = "{'errorText':hasStepError(step)}">{{step.start_time}} -- {{step.name}} </p>
@@ -50,7 +53,8 @@
     </mat-accordion>
     
     <mat-accordion multi="false" >      
-      <log-group [envData] = "envData" [step] = "step" [logGroup]="step.worker_list" [configure]="configure" [scenario] = "scenario"></log-group>  
+      <log-group [envData] = "envData" [step] = "step" [logGroup]="step.worker_list" [configure]="configure" [scenario] = "scenario" *ngIf="!step.infinite_calls"></log-group>  
+      <log-group [envData] = "envData" [step] = "step" [logGroup]="step.logGroup" [configure]="configure" [scenario] = "scenario" *ngIf="step.infinite_calls"></log-group>  
     </mat-accordion>
 
     <mat-accordion multi="false" *ngIf="step.unknown">      

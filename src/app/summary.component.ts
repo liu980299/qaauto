@@ -66,17 +66,46 @@ export class SummaryComponent implements OnInit{
 
     addRemoved(row: any) {
         var index = -1;
+        var checked = [];
         for (var i=0;i<this.data.queues.checked.length;i++){
-            if(this.data.checked[i].id == row.id){
-                index = i;
-                break;
+            if(this.data.queues.checked[i].id == row.id){
+                index = i;                
+            }else{
+                checked.push(this.data.queues.checked[i]);
             }
+
         }
         if(index >=0){
-            this.data.removed_list.push(row);
-            this.data.checked.splice(index,1);
+            var removed = [];            
+            for (let item of this.data.queues.removed){
+                removed.push(item);
+            }
+            removed.push(row);
+            this.data.queues.removed = removed;
+            this.data.queues.checked = checked;
         }
         
+    }
+    removeRemoved(row:any){
+        var index = -1;
+        var removed = [];
+        for (var i=0;i<this.data.queues.removed.length;i++){
+            if(this.data.queues.removed[i].id == row.id){
+                index = i;                
+            }else{
+                removed.push(this.data.queues.removed[i]);
+            }
+
+        }
+        if(index >=0){
+            var checked = [];            
+            for (let item of this.data.queues.checked){
+                checked.push(item);
+            }
+            checked.push(row);
+            this.data.queues.removed = removed;
+            this.data.queues.checked = checked;
+        }
     }
     removeAdded(element: any) {
         var added = [];
