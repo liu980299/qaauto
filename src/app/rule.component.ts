@@ -33,15 +33,34 @@ export function lengthValidator(): ValidatorFn {
     targetCtrl = new FormControl('',{validators:[lengthValidator()],updateOn:'change'});
     commentCtrl = new FormControl('',{validators:[lengthValidator()],updateOn:'change'});
     new_item:any = {};
+    old_item:any;
     isSaveEnabled:boolean = false;
     disabled:any = {};
     candidates:any = {};
     scenarios:any = {};
+    isEditor = false;
 
     constructor(public dialogRef:MatDialogRef<ConfigDialog>,
       @Inject(MAT_DIALOG_DATA) public data: any) {
         if(this.data){
-            this.target = this.data.headers[0];            
+            this.target = this.data.headers[0];   
+            if(this.data.current_id){
+                this.isEditor = true;
+                for (let item of this.data.queues.checked){
+                    if (item.id == this.data.current_id){
+                        this.old_item = item;
+                        for (let key in item){
+                            this.new_item[key] = item[key];
+                        }                                     
+                        this.targetCtrl.setValue(this.new_item[this.target]);
+                        this.setTarget(this.new_item[this.target]);
+                        this.commentCtrl.setValue(this.new_item['Comment']);
+                        console.log(this.new_item['Comment'])
+                        console.log(this.commentCtrl);
+                    }
+                }
+                
+            }                
             this.headers = this.data.headers.slice(1).filter((item: any)=>this.data.multiple_list.indexOf(item)>=0||this.data.single_list.indexOf(item)>=0);                        
             this.multiple_list = this.data.multiple_list;
             this.candidates[this.target] = [];
@@ -54,6 +73,7 @@ export function lengthValidator(): ValidatorFn {
                 map((target: string | null) => (target ? this._filter(target) : this.candidates[this.target].slice())),
         
             )    
+            console.log(this);
         }
       }
 
@@ -63,6 +83,10 @@ export function lengthValidator(): ValidatorFn {
             added.push(item);
         }
         var new_item:any = {};
+        if (this.data.current_id){            
+            this.old_item.updated = true;
+            new_item.original_id = this.data.current_id;
+        }
         new_item[this.target] = this.targetCtrl.value;
         new_item.id = getNewId(this.data.queues.added);
         for (let key in this.new_item){
@@ -70,12 +94,16 @@ export function lengthValidator(): ValidatorFn {
             if (key == "target"){
                 new_item.target = [];
                 for (let target of this.new_item.target){
-                    new_item.target.push(...target);
+                    if (Array.isArray(target) && target.length > 0){
+                        new_item.target.push(...target);
+                    }
                 }
             }else{
                 new_item[key] = this.new_item[key];
             }
-            this.new_item[key] = null;
+            if (!this.data.current_id){
+                this.new_item[key] = null;
+            }            
         }
         added.push(new_item);
         for (let target of new_item.target){
@@ -126,9 +154,11 @@ export function lengthValidator(): ValidatorFn {
         }else{
             this.isSaveEnabled = false;
         }
+        if (this.isSaveEnabled && !this.new_item.target){
+            this.setTargets();
+        }  
     }
-    setTarget() {
-        var value = this.targetCtrl.value;
+    setTarget(value:any) {        
         console.log(value);
         if (value && value.length > 10){            
             this.new_item[this.target] = value;
@@ -146,24 +176,89 @@ export function lengthValidator(): ValidatorFn {
 
     }
 
+    changeLevel($event: MatSelectChange){
+        this.new_item['Level']=$event.value;
+    }
+
+    setTargets(){
+        if (!this.new_item.target){
+            this.new_item.target = []
+            if (!this.candidates[this.target]){
+                this.setTarget(this.new_item[this.target]);
+            }
+            if(this.target == 'Error'){
+                
+                if (this.new_item['Scenario']){
+                    if (this.new_item['Scenario'][0]  == 'All'){
+                        for (let candidate of this.candidates['Scenario']){
+                            if (candidate.name != 'All'){
+                                this.new_item.target.push(candidate.target);
+                                this.disabled['Scenario'] = false;
+                            }
+                        }
+                    }else{
+                        for (let candidate of this.candidates['Scenario']){
+                            if (this.new_item['Scenario'].indexOf(candidate.name) >=0){
+                                this.new_item.target.push(candidate.target);
+                            }                            
+                        }
+                    }                    
+                }
+            }else{
+                this.candidates["Duplicate"] = [{name:"All",target:{}}];
+                var options_dict:any = {};
+                for (let candidate of this.candidates["Scenario"]){
+                    var options = candidate.target                     
+                    if (this.new_item['Scenario'][0] != "All"){
+                        for (var item of this.new_item['Scenario']){                                             
+                            if (candidate.name == item){                                
+                                for (var option in options){
+                                    if (option in options_dict){
+                                        options_dict[option].push(options[option])
+                                    }else{
+                                        options_dict[option] = [options[option]]
+                                    }                                                                                        
+                                }                                    
+                            }                                
+                        }
+                    }else{ 
+                        this.disabled['Scenario'] = false;                                               
+                        for (var option in options){
+                            if (option in options_dict){
+                                options_dict[option].push(options[option])
+                            }else{
+                                options_dict[option] = [options[option]]
+                            }                                                                                                            
+                        }                                    
+                    }                                            
+                }
+                var option_list: string[] = [];
+                for(var option in options_dict){
+                    this.candidates["Duplicate"].push({name:option,target:options_dict[option]});                    
+                    option_list.push(option);
+                }
+                if (this.new_item["Duplicate"]){
+                    this.new_item["Duplicate"] = this.new_item["Duplicate"].filter((item: string)=>option_list.indexOf(item)>=0);
+                }
+                for(let api of this.new_item["Duplicate"]){
+                    this.new_item.target.push(...options_dict[api]);
+                }
+            }
+        }
+    }
     changeValue(header: string,$event: MatSelectChange) {
-        var index = this.data.headers.indexOf(header);
-        
+        var index = this.data.headers.indexOf(header);                
         if (index >= 0){
             var target = $event.value;            
-            this.new_item[this.data.headers[index]] = target;            
-            if (index < this.data.headers.length - 1){
-                for (var i = index + 1; i < this.data.headers.length; i++){
-                    if (this.data.headers[i] in this.new_item){
-                        this.new_item[this.data.headers[i]] = null;                        
-                        this.disabled[this.data.headers[i]] = false;
-                    }
-                    this.candidates[this.data.headers[index + 1]] = [];
-                }                
-                var next_header =  this.data.headers[index+1];
-                this.candidates[next_header] = [{name:"All",target:{}}]; 
+            if (target){
+                this.new_item[header] = target;                        
+            }            
+            if (header == 'Scenario' && this.target == 'Step'){
+                this.new_item["Duplicate"] = null;
+                this.disabled["Duplicate"] = false;
+                this.candidates["Duplicate"] = [{name:"All",target:{}}];
                 var options_dict:any = {};
-                for (let candidate of this.candidates[this.data.headers[index]]){
+                for (let candidate of this.candidates["Scenario"]){
                     var options = candidate.target                     
                     if (this.new_item[this.data.headers[index]][0] != "All"){
                         for (var item of this.new_item[this.data.headers[index]]){                                             
@@ -187,26 +282,24 @@ export function lengthValidator(): ValidatorFn {
                         }                                    
                     }                                            
                 }
-                this.new_item.target = [];
-                for(var option in options_dict){
-                    this.candidates[this.data.headers[index+1]].push({name:option,target:options_dict[option]});
-                    if (this.target == 'Error'){
-                        this.new_item.target.push(options_dict[option]);
-                    }else{
-                        this.new_item.target.push(...options_dict[option]);
-                    }
-                    
-                }
-            }                        
-            if (this.multiple_list.indexOf(header) >= 0){
-                if (target.indexOf('All') >=0){
-                    this.disabled[header] = true;
-                }else{
-                    this.disabled[header] = false;
-                }
-            }
+            }            
         }
+        var required_list = this.data.headers;
+        if (this.data.required){
+            required_list = this.data.required;
+        }
+        this.isSaveEnabled = true;
+        for (var required of required_list){
+            if (!this.new_item[required] || this.new_item[required].length== 0){
+                this.isSaveEnabled = false;                
+            }            
+        }
+        if (this.isSaveEnabled && !this.new_item.target){
+            this.setTargets();
+        }
+
     }
+    
 
       private _filter(value: string): string[] {
         const filterValue = value.toLowerCase();

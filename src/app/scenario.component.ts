@@ -27,28 +27,33 @@ export function getErrorBadgeText(step:any){
                 step.badgeText = "E";
             }
         }    
-        for (let worker of step.worker_list){            
-            if (worker.error){
-                var worker_error = worker.error.expected;
-                // for (let error of worker.errors){
-                //     worker_error = worker_error && errors[error.name];
-                // }
-                if(worker_error){
-                    if (worker.badgeText == "D,E"){
-                        worker.badgeText = "D"
-                    }else{
-                        worker.badgeText = ""
-                    }    
-                }else{
-                    if (worker.badgeText == "D"){
-                        worker.badgeText = "D,E"
-                    }else{
-                        worker.badgeText = "E"
-                    }    
-
-                }
-            }                
-        }    
+        for (let content of ["worker_list","unknown"]){
+            if (step[content]){
+                for (let worker of step[content]){            
+                    if (worker.error){
+                        var worker_error = worker.error.expected;
+                        // for (let error of worker.errors){
+                        //     worker_error = worker_error && errors[error.name];
+                        // }
+                        if(worker_error){
+                            if (worker.badgeText == "D,E"){
+                                worker.badgeText = "D"
+                            }else{
+                                worker.badgeText = ""
+                            }    
+                        }else{
+                            if (worker.badgeText == "D"){
+                                worker.badgeText = "D,E"
+                            }else{
+                                worker.badgeText = "E"
+                            }    
+        
+                        }
+                    }                
+                }        
+            }
+    
+        }
     }
 
 }
@@ -116,8 +121,7 @@ export function getExpectedError(envData:any){
                                 error_ids[step_error.id] = step_error;
                                 envData.expected_errors++;
                             }
-                        }
-                        console.log(error_ids);
+                        }                        
                     }                     
                 }
             }
@@ -166,10 +170,12 @@ function   checkScenario(scenario:any){
 
 export function getNewId(queue:any){
     var new_id = 1;
-    if (queue.length > 0){
-        new_id = queue[queue.length - 1].id + 1;    
+    for (var i = 0; i < queue.length; i++){
+        if (new_id < queue[i].id){
+            new_id = queue[i].id;
+        }
     }
-    return new_id
+    return new_id + 1;
 }
 
 @Component({    

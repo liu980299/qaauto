@@ -115,8 +115,8 @@ export class AppComponent implements OnInit, AfterViewInit  {
   job_url = "";
   keepAlive:any;
   infinity_calls:any=[];
-  errors_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Scenario","Comment"],
-  single_list:["Error"],multiple_list:["Scenario"]};
+  errors_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Name","Category","Level","Scenario","Comment"],
+  single_list:["Error"],multiple_list:["Scenario"],required:["Error","Name","Category","Level","Comment"]};
   duplicates_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Step","Scenario","Duplicate","Comment"],
   single_list:["Step"],multiple_list:["Scenario","Duplicate"]}; 
 ;
@@ -469,8 +469,12 @@ export class AppComponent implements OnInit, AfterViewInit  {
       for(let envData of this.data){
         var log_analysis_url = "/assets/" + envData.name + "_";
         this.dataService.getZip(log_analysis_url + "log_analysis.zip",envData.name + "_log_analysis.json").then((data)=>{
-          this.loadLogAnalysis(data);    })
-  
+          var _log_url = "/assets/" + data.env + "_";
+          this.dataService.getZip(_log_url+ "tests_analysis.zip",data.env +"_tests_analysis.json").then((tests)=>{
+            data.tests = tests;
+            this.loadLogAnalysis(data);  
+          });      
+        });  
       }
   
     }else{
@@ -482,13 +486,20 @@ export class AppComponent implements OnInit, AfterViewInit  {
           for (let envData of this.data){
             var log_analysis_url = this.configure.log_analysis_url + envData.name  + "_";
             this.dataService.getZip(log_analysis_url+ "log_analysis.zip",envData.name +"_log_analysis.json").then((data)=>{
-              this.loadLogAnalysis(data);    }).catch((e)=>{
+              var _log_url = this.configure.log_analysis_url + data.env + "_";
+              this.dataService.getZip(_log_url+ "tests_analysis.zip",data.env +"_tests_analysis.json").then((tests)=>{
+                data.tests = tests;
+                this.loadLogAnalysis(data);  
+              }).catch((e)=>{console.log(e)});
+            }).catch((e)=>{
                 if (this.configure.log_analysis.build < this.configure.log_analysis.lastBuild){
                   this.configure.log_analysis.build++;
                   this.fetch_log_analysis();                
                 }
               });
-  
+              // this.dataService.getZip(log_analysis_url+ "tests_analysis.zip",envData.name +"_tests_analysis.json").then((data)=>{
+              //   this.loadTestsAnalysis(envData,data);    });
+    
           }
   
         });
@@ -496,6 +507,13 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
 
   }
+  loadTestsAnalysis(envData:any,data:any){
+    envData.tests = data;
+    this.loadLogAnalysis(data);
+  }
+
+  
+
   loadLogAnalysis(data:any){
     console.log(data);
     var envData = data;
@@ -511,7 +529,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
             env.tests = envData.tests;
             env.main_log = envData.main_log;
             if (!this.errors_cfg){
-                this.errors_cfg = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Scenario","Comment"],
+                this.errors_cfg = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Scenario","Category","Level","Comment"],
                 single_list:["Error"],multiple_list:["Scenario"]}; 
             }
             env.errors_cfg = {start_time:env.start_time,end_time:env.end_time};
@@ -546,6 +564,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                         if (items.filter((item:string)=>error.name.indexOf(item)<0).length == 0){
                           if (rule.Scenario.indexOf(scenario.name) >= 0 || rule.Scenario.indexOf('All') >=0 ){
                             error.expected = true;
+                            error.disabled = true;
                             for (let step of error.steps ){
                               getErrorBadgeText(step);
                             }                            
@@ -666,17 +685,24 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   var category_node:TestNode ={name:category,children:[],data:{type:"errors"}};
                                 
                   for (var error_type in log_errors[category]){
+                    if (error_type == 'org.springframework.web.context.request.async.AsyncRequestNotUsableException: ServletOutputStream failed to write'){
+                      console.log(log_errors[category][error_type]);
+                    }
                     var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors"}};                    
                     var error_list = log_errors[category][error_type];
                     var scenario_dict:any = {};
-                    var session_dict:any = {}
+                    var session_dict:any = {};
+                    var failed_tests = 0;
                     for (let error of error_list){
                         if (error.scenario){
                           if (error.scenario in scenario_dict){
                             scenario_dict[error.scenario].num += 1;
                           }else{
                             scenario_dict[error.scenario] = {num:1,error:error};
-                          }                          
+                            if (error.scenario in env.tests && env.tests[error.scenario].result == "failed"){
+                              failed_tests++;
+                            }  
+                          }
                         }else{
                           var error_name = error.thread;  
                           if (error.user){
@@ -708,13 +734,16 @@ export class AppComponent implements OnInit, AfterViewInit  {
                     }
                     for (let scenario in scenario_dict){
                       var error_node:TestNode = {name:scenario,children:[],data:{type:"scenarios",name:scenario}};
-
+                      if (scenario.indexOf("34 - QA-17565 Verify that one is able to upload/update a policy via a portal API") >= 0){
+                        console.log(scenario_dict[scenario]);
+                      }
                       if (scenario_dict[scenario].num > 1){
                         error_node.name += " (" + scenario_dict[scenario].num + ")";
                       }
                       error_node.data.is_new = true;
                       if (scenario in env.scenarios){
-                        error_node.data.is_new = false;
+                        // error_node.data.is_new = false;
+                        error_node = env.scenarios[scenario];
                       }
                       error_node.data.log_file = log_name
                       for (let error of env.tests[scenario].error_summary){
@@ -730,7 +759,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                         error_type_node.children?.push(error_node);  
                       }                      
                     }
-                    error_type_node.name = error_type + "(" + error_list.length +")";
+                    error_type_node.name = error_type + "(" + failed_tests + "/" + error_list.length +")";
                     if (error_type_node.children?.length && error_type_node.children?.length > 0){
                       sub_total += error_list.length;
                       category_node.children?.push(error_type_node);
@@ -769,10 +798,8 @@ export class AppComponent implements OnInit, AfterViewInit  {
 
   }
   loadTasks(data:any){        
-    if (data.build == this.build || location.origin.indexOf("local") > 0){
-      this.updateJiras(data.jiras);
-    }
     if (data.build <= this.build || location.origin.indexOf("local") > 0){
+      this.updateJiras(data.jiras);
       this.task_build = data.task_build;
       var tasks = data.tasks;
       for (let envData of this.data){ 
@@ -889,7 +916,12 @@ export class AppComponent implements OnInit, AfterViewInit  {
       for (let a_jira of envData.jiras){
         jira_id_list.push(a_jira.id);
       }
-      var jira_list = envData.perspectives[2].data.data;  
+      var jira_list:any = [];
+      for (let case_data of envData.perspectives[2].data.data){
+        var case_node:TestNode = {name:case_data.name,data:case_data.data,children:case_data.children};
+        jira_list.push(case_node);
+      }  
+
       var jira_ids:any = [];
       for (let jira of jiras){
         if (jira.version <= envData.version){            
@@ -916,14 +948,16 @@ export class AppComponent implements OnInit, AfterViewInit  {
                     remove_list.push(scenario_data.name);
                   }else{
                     scenario_list.push(scenario_data.name);
+                    case_data.children.push(scenario_data);
                   }
                 }                
-                case_data.data.scenarios = case_data.data.scenarios.filter((item:any)=>remove_list.indexOf(item.name)<0);
+                case_data.data.scenarios = case_data.data.scenarios.filter((item:any)=>remove_list.indexOf(item.name)<0);                
                 case_data.data.removed = case_data.data.removed.filter((item:string)=>remove_list.indexOf(item)<0);
                 var change_list = jira.scenarios.filter((item:any)=>scenario_list.indexOf(item.name)<0)
                 for (let scenario of change_list){
                   if (scenario.name in envData.scenarios){
                     case_data.data.scenarios.push(envData.scenarios[scenario.name]);
+                    case_data.children.push(envData.scenarios[scenario.name]);
                     if (envData.scenarios[scenario.name].data.jiras.indexOf(jira.id) < 0){                      
                       envData.scenarios[scenario.name].data.jiras.push(jira.id);
                       envData.scenarios[scenario.name].data.JIRA = envData.scenarios[scenario.name].data.jiras.join(",");
@@ -980,10 +1014,12 @@ export class AppComponent implements OnInit, AfterViewInit  {
           if (scenario.name in envData.scenarios){
             var scenario_data = envData.scenarios[scenario.name];
             case_data.data.scenarios.push(scenario_data);
+            case_data.children?.push(scenario_data);
             scenario_data.data.jiras.push(jira.id);
             scenario_data.data.JIRA = scenario_data.data.jiras.join(",");  
           }
         }
+        jira_nodes.push(case_data);
         jira_list.push(case_data);
       }
       envData.perspectives[2].data.data = jira_list;
@@ -1359,6 +1395,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
   moveScenarios(jira:any,ticket:any){
     console.log(jira);  
     var target:any;
+
     for(let case_item of this.data[this.selectIndex].perspectives[2].data._data._value){
       if (case_item.data.id == ticket.id){  
           target = case_item;
@@ -1386,6 +1423,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
   }
   
   moveScenario(source:any,target:any,scenario:any){
+    console.log(scenario);
     if (target.data.scenarios.indexOf(scenario) >= 0){
       if (target.data.removed.indexOf(scenario.name) >= 0){
         target.data.removed.splice(target.data.removed.indexOf(scenario.name),1);
@@ -1396,6 +1434,40 @@ export class AppComponent implements OnInit, AfterViewInit  {
         scenario.data.changed = true;
       }
     }
+    var targetNode:TestNode = {name:target.name,data:target.data,children:[]};
+    var sourceNode:TestNode = {name:source.name,data:source.data,children:[]};
+    var found = false;
+    for (let scenario_data of target.children){
+      if (scenario_data.name == scenario.name){
+        found = true;
+      }
+      targetNode.children?.push(scenario_data);
+    }
+    for (let scenario_data of source.children){
+      if (scenario_data.name != scenario.name){
+        sourceNode.children?.push(scenario_data);
+      }
+    }
+    var jira_nodes = this.data[this.selectIndex].perspectives[2].data.data;
+    var cases_nodes: TestNode[] = [];
+    for (var i=0; i < jira_nodes.length; i++){
+      if (jira_nodes[i].name == source.name){
+        jira_nodes[i] = sourceNode;
+        cases_nodes.push(sourceNode);
+      }else{
+        if (jira_nodes[i].name == target.name){
+          jira_nodes[i] = targetNode;
+          cases_nodes.push(targetNode);
+        }else{
+          cases_nodes.push(jira_nodes[i]);
+        }
+      }
+
+    }
+    if (!found){
+      targetNode.children?.push(scenario);
+    }
+    this.data[this.selectIndex].perspectives[2].data.data = cases_nodes;
     if (scenario.data.jiras.indexOf(source.data.id) >=0 && scenario.data.removed.indexOf(source.data.id) <0){
       scenario.data.removed.push(source.data.id);
     }
@@ -1413,6 +1485,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
   }
 
   removeScenarios(jira:any){
+    var cases_node = this.data[this.selectIndex].perspectives[2].data.data;
     if (!jira.data.existing || jira.data.existing.length == 0){
       jira.data.existing = [];
       for (let scenario of jira.data.scenarios){
@@ -1427,7 +1500,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
     for (let scenario of jira.data.checked){
       if (jira.data.removed.indexOf(scenario) < 0 && jira.data.existing.indexOf(scenario) >=0 ){
-        jira.data.removed.push(scenario);
+        jira.data.removed.push(scenario);        
       }
       var scenario_data = jira.data.scenario_dict[scenario];
       if (!scenario_data){
@@ -1452,6 +1525,17 @@ export class AppComponent implements OnInit, AfterViewInit  {
         }
       }
     }
+    var case_node:TestNode = {name:jira.name,data:jira.data,children:[]}
+    for (let scenario_data of jira.children){
+      if (jira.data.checked.indexOf(scenario_data.name) < 0){
+        case_node.children?.push(scenario_data);
+      }
+    }
+    var case_index = cases_node.indexOf(jira);
+    if (case_index >= 0){
+      cases_node[case_index] = case_node;
+    }
+    this.data[this.selectIndex].perspectives[2].data.data = cases_node;
     jira.data.checked = [];
     this.updateJiraChanges();
   }
@@ -1466,7 +1550,8 @@ export class AppComponent implements OnInit, AfterViewInit  {
     console.log(this.frontend);
     console.log(jira);
     this.assignSelf();
-    var cases = this.frontend.node.data.case_list;
+    var cases = this.data[this.selectIndex].perspectives[2].data.data;
+    var cases_node:TestNode[] = [];
     var jira_id = jira.id;
     if (this.frontend.node.data.jiras.indexOf(jira.id) <0){
       this.frontend.node.data.changes.push(jira.id);
@@ -1478,13 +1563,26 @@ export class AppComponent implements OnInit, AfterViewInit  {
     
     for(let case_item of cases){
       if (case_item.name.indexOf(jira_id) >=0){
+        var case_node:TestNode = {name:case_item.name,data:case_item.data,children:[]};
+        for (let scenario_data of case_item.children){
+          case_node.children?.push(scenario_data);
+        }
+
         case_item.data.changes.push(this.frontend.node);
+        if (this.data[this.selectIndex].scenarios[this.frontend.name]){
+          case_node.children?.push(this.data[this.selectIndex].scenarios[this.frontend.name]);
+        }        
         if (case_item.data.jira_ref && case_item.data.jira_ref.length> 0){
           this.unsetJiraRef(case_item.data.jira_ref);
         }                
+        cases_node.push(case_node);
         this.frontend.node.data.changed = true;
+      }else{
+        cases_node.push(case_item);
       }
+      
     }
+    this.data[this.selectIndex].perspectives[2].data.data = cases_node;
     this.updateJiraChanges();
   }
 
@@ -2865,9 +2963,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
             }      
           }
         }        
-      // }
+      // }      
       this.new_jira=null;      
-    }
+    }    
   }
   sortData(sort:Sort){
     const data = this.datasources.slice();

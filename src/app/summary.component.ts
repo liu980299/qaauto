@@ -60,9 +60,12 @@ export class SummaryComponent implements OnInit{
             }                        
             this.reset();
         }
-        
+        console.log(this);
     }
 
+    getChecked(){
+        return this.data.queues.checked.filter((item:any)=>!item.updated);
+    }
 
     addRemoved(row: any) {
         var index = -1;
@@ -85,6 +88,13 @@ export class SummaryComponent implements OnInit{
             this.data.queues.checked = checked;
         }
         
+    }
+    editItem(element:any){
+        this.data.current_id = element.id;
+        this.data.title  = "Edit Rule";
+        var dialogRef = this.dialog.open(ConfigDialog,{data:this.data,width:"800px"});
+        dialogRef.afterClosed().subscribe(this.updateResult.bind(this));
+
     }
     removeRemoved(row:any){
         var index = -1;
@@ -113,6 +123,9 @@ export class SummaryComponent implements OnInit{
             if (item.id != element.id){
                 added.push(item);
             }else{
+                if (item.original_id){
+                    this.data.queues.checked[item.original_id - 1].updated = false;
+                }
                 for(let target of item.target){
                     if (this.target == "Error"){
                         target.expected = false;                        
@@ -154,29 +167,35 @@ export class SummaryComponent implements OnInit{
         
         
     }
-    new_rule(){
-        var dialogRef = this.dialog.open(ConfigDialog,{data:this.data,width:"800px"});
-        dialogRef.afterClosed().subscribe((result)=>{
-          if(result){
+    updateResult(result:any){
+        if(result){
             console.log(result);
           }
-          if (this.target == 'Error'){
-            this.configChange.emit(this.target);            
+          if (this.target){
+            if (this.target == 'Error'){
+                this.configChange.emit(this.target);            
             }else{
-            this.configChange.emit('Duplicate');            
+                this.configChange.emit('Duplicate');            
             }
-
-          if(this.target == 'Error'){            
-            for (let envData of this.envs){
-                getExpectedError(envData);
-            }            
-          }else{            
-            for (let envData of this.envs){
-                getExpectedDupicates(envData);
-            }            
+    
+            if(this.target == 'Error'){            
+                for (let envData of this.envs){
+                    getExpectedError(envData);
+                }            
+            }else{            
+                for (let envData of this.envs){
+                    getExpectedDupicates(envData);
+                }            
+            }
+          
+    
           }
-      
-        })      
+
+    }
+    new_rule(){
+        this.data.title  = "New Rule";
+        var dialogRef = this.dialog.open(ConfigDialog,{data:this.data,width:"800px"});
+        dialogRef.afterClosed().subscribe(this.updateResult.bind(this));
 
     }
 
