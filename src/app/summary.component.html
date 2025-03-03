@@ -64,7 +64,22 @@
   </ng-container>
   <ng-container *ngFor="let header of data.multiple_list" [matColumnDef]="header">
     <th mat-header-cell *matHeaderCellDef >{{header}}</th>
-    <td mat-cell *matCellDef="let element"> <p *ngFor="let item of element[header]"> {{item}}</p> </td>            
+    <td mat-cell *matCellDef="let element"> 
+      <div *ngIf = "element[header].length > 0">
+        <mat-expansion-panel *ngIf="element[header][0] != 'All'">
+          <mat-expansion-panel-header >
+            <mat-panel-title>{{element[header].length}} {{header}}</mat-panel-title>      
+          </mat-expansion-panel-header>          
+          <mat-accordion multi="false" >
+      
+            <li *ngFor="let item of element[header]">{{item}}</li>
+          </mat-accordion>
+        </mat-expansion-panel>
+      
+      <p *ngIf="element[header][0] == 'All'"> All</p> 
+      </div>    
+
+       </td>            
   </ng-container>    
 
 

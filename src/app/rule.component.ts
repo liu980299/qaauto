@@ -145,7 +145,7 @@ export function lengthValidator(): ValidatorFn {
         if (this.commentCtrl.value && this.commentCtrl.value.length > 10){
             this.new_item['Comment'] = this.commentCtrl.value;
             this.isSaveEnabled = true;
-            for (let header of this.data.headers){
+            for (let header of this.data.required){
                 if (!this.new_item[header]){
                     this.isSaveEnabled = false;
                     break;

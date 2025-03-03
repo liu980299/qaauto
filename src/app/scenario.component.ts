@@ -9,10 +9,17 @@ export function getErrorBadgeText(step:any){
     if(scenario.error_summary.length > 0){
         for(let error of scenario.error_summary){
             errors[error.name] = !!error.expected
-            expected_error = expected_error && errors[error.name]
+            expected_error = expected_error && errors[error.name]        
         }        
-        for (let error of step.errors){
-            error.expected = errors[error.name]            
+        if (step.errors){
+            for (let error of step.errors){
+                error.expected = errors[error.name]            
+            }    
+        }
+        if (step.sessions){
+            for (let session of step.sessions){
+                session.expected = errors[session.error]
+            }
         }
         if (expected_error){
             if (step.badgeText == "D,E"){
@@ -113,15 +120,24 @@ export function getExpectedError(envData:any){
         if (scenario.error_summary.length > 0){
             for(let error of scenario.error_summary){
                 if (error.expected){
-                    var error_name = error.name
+                    var error_name = error.name                    
                     for (let step of error.steps){
                         var error_ids:any = {};
-                        for (let step_error of step.errors){
-                            if (step_error.name == error_name && !(step_error.id in error_ids) ){
-                                error_ids[step_error.id] = step_error;
-                                envData.expected_errors++;
+                        if (step.errors){
+                            for (let step_error of step.errors){
+                                if (step_error.name == error_name && !(step_error.id in error_ids) ){
+                                    error_ids[step_error.id] = step_error;
+                                    envData.expected_errors++;
+                                }
+                            }                            
+                        }
+                        if (step.sessions){
+                            for (let session of step.sessions){
+                                if (session.error == error_name){
+                                    envData.expected_errors++;                                    
+                                }
                             }
-                        }                        
+                        }
                     }                     
                 }
             }
@@ -176,6 +192,59 @@ export function getNewId(queue:any){
         }
     }
     return new_id + 1;
+}
+
+export function updateError(error:any,scenario:any,envData:any){
+    var del_error = null;
+    var index = 0;
+    for (var err_cfg of envData.errors_cfg.queues.added){
+        if (err_cfg.Error == error.name){
+            del_error = err_cfg;
+            break;
+        }
+        index++;
+    }
+    if (error.expected){
+        if (!del_error){
+            var new_id = getNewId(envData.errors_cfg.queues.added)
+            envData.errors_cfg.queues.added.push({Error:error.name,Scenario:[scenario.name],target:[],Category:"Test",Name:"Expected Error",Level:"Low",id:new_id});
+            error.cfg_id = new_id;
+        }else{
+            if (!del_error.Scenario.includes(scenario.name)){
+                del_error.Scenario.push(scenario.name);
+                del_error.target.push(envData.errors_cfg.data[error.name][scenario.name])                
+            }
+        }
+    }
+    else{
+        if (del_error){
+            if (del_error.Scenario.length > 1){
+                del_error.Scenario.splice(del_error.Scenario.indexOf(scenario.name),1);
+            }
+            if (del_error.Scenario.length == 0){                
+                envData.errors_cfg.queues.added.splice(index,1); 
+            }
+        }
+    }
+    for(let step of error.steps){
+        if (step.errors){
+            for (let step_error of step.errors){
+                if (step_error.name == error.name){
+                    step_error.expected = error.expected;
+                }
+            }                            
+        }        
+        if (step.sessions){
+            for (let session of step.sessions){
+                if (session.error == error.name){
+                    session.expected = error.expected;
+                }
+            }
+        }
+        getErrorBadgeText(step);
+    }
+    getExpectedError(envData);
+
 }
 
 @Component({    
@@ -236,37 +305,9 @@ export class ScenarioComponent  implements OnInit {
 
     }
     changeError(error:any,scenario:any,envData:any){
-        var del_error = null;
-        var index = 0;
-        for (var err_cfg of envData.errors_cfg.queues.added){
-            if (err_cfg.Error == error.name &&  err_cfg.Scenario.length==1 && err_cfg.Scenario[0]== scenario.name){
-                del_error = err_cfg;
-                break;
-            }
-            index++;
-        }
-        if (error.expected){
-            if (!del_error){
-                var new_id = getNewId(this.envData.errors_cfg.queues.added)
-                envData.errors_cfg.queues.added.push({Error:error.name,Scenario:[scenario.name],target:[error],id:new_id});
-                error.cfg_id = new_id;
-            }
-        }
-        else{
-            if (del_error){
-                envData.errors_cfg.queues.added.splice(index,1); 
-            }
-        }
-        for(let step of error.steps){
-            for (let step_error of step.errors){
-                if (step_error.name == error.name){
-                    step_error.expected = error.expected;
-                }
-            }            
-            getErrorBadgeText(step);
-        }
+        updateError(error,scenario,envData);
         this.configChange.emit('Error');
-        getExpectedError(envData);
+        
     }
     setErrorExpected(error:any,option:string){
         if (!this.envData.expected){

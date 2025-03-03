@@ -86,6 +86,11 @@ export class SummaryComponent implements OnInit{
             removed.push(row);
             this.data.queues.removed = removed;
             this.data.queues.checked = checked;
+            if (this.target == 'Error'){
+                this.configChange.emit(this.target);            
+            }else{
+                this.configChange.emit('Duplicate');            
+            }    
         }
         
     }
@@ -126,12 +131,18 @@ export class SummaryComponent implements OnInit{
                 if (item.original_id){
                     this.data.queues.checked[item.original_id - 1].updated = false;
                 }
-                for(let target of item.target){
-                    if (this.target == "Error"){
-                        target.expected = false;                        
-                        for (let step of target.steps){                            
-                            getErrorBadgeText(step);
-                        }                        
+                
+                for(let targets of item.target){
+                    if (!(targets instanceof Array)){
+                        console.log(targets);
+                    }
+                    if (this.target == "Error"){                        
+                        for (let target of targets){
+                            target.expected = false;   
+                            for(let step of target.steps){
+                                getErrorBadgeText(step);
+                            }                            
+                        }                                                
                     }else{
                         for (let duplicate of element.Duplicate){
                             for (let target of item.target){

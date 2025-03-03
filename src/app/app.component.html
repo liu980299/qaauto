@@ -59,7 +59,7 @@
             <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unassigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>
             <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
             <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0))"
-            [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && !node.data.is_new"
+            [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && (!node.data.is_new||node.data.failed)"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
             [class.expected] =  "(perspective.name=='Duplicates' && node.data.is_duplicate_expected) || (perspective.name=='Errors' && node.data.error && node.data.error.expected)"
             [class.changed]="node.data && node.data.changes && node.data.removed && node.data.changes.length + node.data.removed.length > 0 && !node.data.selected" 
@@ -79,8 +79,9 @@
                   </mat-icon>
                 </button>
                 <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
-                <span *ngIf="perspective.name!='Tasks' && perspective.name!='Jiras'">{{node.name}}</span>
+                <span *ngIf="perspective.name!='Tasks' && perspective.name!='Jiras' && (!node.data || node.data.type!='errors')">{{node.name}}</span>
                 <button *ngIf="perspective.name=='Tasks'" [matBadge]="node.data.task_changes" [matBadgeHidden]="node.data.task_changes==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
+                <button *ngIf="perspective.name=='Errors' && node.data.type=='errors'" (click)="selectNode(node)">{{node.name}}</button>
                 <button *ngIf="perspective.name=='Jiras'" [matBadge]="node.data.changes.length+node.data.removed.length" [class.selected]="node.data && node.data.selected" 
                 [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)">
                   {{node.name}}</button>
@@ -407,6 +408,21 @@
       </div>
       <div style="display: block;height: 100%;" *ngIf="workspace=='Errors' && !node">
         <summary [data]="data[selectIndex].errors_cfg" #summaryPage [envData] = "data[selectIndex]" [envs]="data" (configChange)="checkConfig($event)"></summary>
+      </div>     
+      <div style="display: block;height: 100%;" *ngIf="workspace=='Errors' && node && node.data.type=='errors'">
+        <h2>{{node.name}}</h2>
+        <h3>Total happened : {{node.data.total}}</h3>
+        <h3>Linked Scenarios : {{node.data.scenarios.length}}</h3>
+        <h3>Failed Tests: {{node.data.failed}}</h3>
+        <div *ngIf = "node.data.scenarios.length > 0">
+          <button  mat-raised-button  color="primary"  (click)="setErrorExpected(node)">Set Expected</button>
+          <div *ngFor="let api of node.data.api_list"><h3>{{api.name}}</h3>
+          <mat-checkbox  [checked]="node.data.selected_all" (change) = "selectAll($event,api)">Select All</mat-checkbox>
+          <div *ngFor="let scenario of api.scenarios">
+          <mat-checkbox  [checked]="scenario.selected" *ngIf="!scenario.error.expected" [class.error]="scenario.scenario.result=='failed'">{{scenario.scenario.name}}</mat-checkbox>
+          </div>
+        </div>
+          </div>
       </div>     
       <div style="display: block;height: 100%;" *ngIf="workspace=='Duplicates' && !node">
         <summary [data]="data[selectIndex].duplicates_cfg" #summaryPage [envData] = "data[selectIndex]" [envs]="data" (configChange)="checkConfig($event)"></summary>

@@ -11,7 +11,7 @@ import {ErrorStateMatcher} from '@angular/material/core';
 import { Observable, map, startWith } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { DialogChangeDialog } from './dialog.component';
-import { getBadgeText, getErrorBadgeText, getExpectedDupicates, getExpectedError, ScenarioComponent } from './scenario.component';
+import { getBadgeText, getErrorBadgeText, getExpectedDupicates, getExpectedError, ScenarioComponent, updateError } from './scenario.component';
 import { SummaryComponent } from './summary.component';
 
 declare var report_url: any,jira_url:any;
@@ -412,6 +412,27 @@ export class AppComponent implements OnInit, AfterViewInit  {
      
   }
 
+  setErrorExpected(node:any){
+    for (let api of node.data.api_list){
+      for (let item of api.scenarios){
+        if (item.selected){
+          item.error.expected = true;
+          updateError(item.error,item.scenario,this.data[this.selectIndex]);
+        }
+      }
+    }
+    this.checkConfig('Error');
+  }
+
+  selectAll($event:any,api:any){
+    api.selected_all = $event.checked;
+    for (let item of api.scenarios){
+      if (!item.error.expected){
+        item.selected = api.selected_all;
+      }      
+    }
+  }
+
   pass_test(node:any){
     var failed_tests = 0
     if (node.data.jira_ref){
@@ -658,7 +679,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
             env.expected_errors = 0;
             env.expected_steps = 0;
             for (let log_name in envData.errors){
-              var log_error_node:TestNode = {name:log_name,children:[],data:{type:"errors"}};
+              var log_error_node:TestNode = {name:log_name,children:[],data:{type:"categories"}};
               error_nodes.push(log_error_node);
               var log_errors = envData.errors[log_name];
               var log_total = 0;
@@ -670,7 +691,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
               for (let category in log_errors){
                 var sub_total = 0;  
                 if (category == 'fatal' && log_errors['fatal'].length > 0){
-                  var fatal_node:TestNode={name:"fatal",children:[],data:{type:"errors"}};
+                  var fatal_node:TestNode={name:"fatal",children:[],data:{type:"categories"}};
                   log_error_node.children?.push(fatal_node);
                   for (var error of log_errors['fatal']){
                     var error_node:TestNode = {name:error.name,children:[],data:{type:"errors"}};
@@ -682,21 +703,23 @@ export class AppComponent implements OnInit, AfterViewInit  {
 
                 }
                 else{
-                  var category_node:TestNode ={name:category,children:[],data:{type:"errors"}};
+                  var category_node:TestNode ={name:category,children:[],data:{type:"categories"}};
                                 
                   for (var error_type in log_errors[category]){
-                    if (error_type == 'org.springframework.web.context.request.async.AsyncRequestNotUsableException: ServletOutputStream failed to write'){
-                      console.log(log_errors[category][error_type]);
-                    }
-                    var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors"}};                    
+                    var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors",apis:{"others":[]},scenarios:[]}};                    
                     var error_list = log_errors[category][error_type];
                     var scenario_dict:any = {};
                     var session_dict:any = {};
                     var failed_tests = 0;
+                    var apis:any = {};
                     for (let error of error_list){
                         if (error.scenario){
+                          if (error.api){
+                            apis[error.scenario] = error.api;
+                          }
                           if (error.scenario in scenario_dict){
                             scenario_dict[error.scenario].num += 1;
+                            
                           }else{
                             scenario_dict[error.scenario] = {num:1,error:error};
                             if (error.scenario in env.tests && env.tests[error.scenario].result == "failed"){
@@ -733,22 +756,28 @@ export class AppComponent implements OnInit, AfterViewInit  {
                       error_type_node.children?.push(error_node);  
                     }
                     for (let scenario in scenario_dict){
-                      var error_node:TestNode = {name:scenario,children:[],data:{type:"scenarios",name:scenario}};
-                      if (scenario.indexOf("34 - QA-17565 Verify that one is able to upload/update a policy via a portal API") >= 0){
-                        console.log(scenario_dict[scenario]);
-                      }
+                      var error_node:TestNode = {name:scenario,children:[],data:{type:"scenarios",name:scenario}};                      
                       if (scenario_dict[scenario].num > 1){
                         error_node.name += " (" + scenario_dict[scenario].num + ")";
                       }
                       error_node.data.is_new = true;
                       if (scenario in env.scenarios){
-                        // error_node.data.is_new = false;
                         error_node = env.scenarios[scenario];
+                        error_node.data.failed = true
                       }
                       error_node.data.log_file = log_name
                       for (let error of env.tests[scenario].error_summary){
                         if (error.name == scenario_dict[scenario].error.name){
-                          error_node.data.error = error
+                          error_node.data.error = error;
+                          if (scenario in apis){
+                            if (!(apis[scenario] in error_node.data.apis)){
+                              error_node.data.apis[apis[scenario]] = [];
+                            }
+                            error_node.data.apis[apis[scenario]].push({scenario:env.tests[scenario],selected:false,error:error});                            
+                          }else{
+                            error_node.data.apis.others.push({scenario:env.tests[scenario],selected:false,error:error});
+                          }
+                          error_type_node.data.scenarios.push({scenario:env.tests[scenario],selected:false,error:error});
                         }
                       }
                       if (!error_node.data.error || !error_node.data.error.expected){
@@ -759,7 +788,13 @@ export class AppComponent implements OnInit, AfterViewInit  {
                         error_type_node.children?.push(error_node);  
                       }                      
                     }
+                    error_type_node.data.api_list = [];
+                    for (let api in error_type_node.data.apis){
+                      error_type_node.data.api_list.push({name:api,scenarios:error_type_node.data.apis[api]});
+                    }
                     error_type_node.name = error_type + "(" + failed_tests + "/" + error_list.length +")";
+                    error_type_node.data.total = error_list.length;
+                    error_type_node.data.failed = failed_tests;                    
                     if (error_type_node.children?.length && error_type_node.children?.length > 0){
                       sub_total += error_list.length;
                       category_node.children?.push(error_type_node);
@@ -1130,13 +1165,15 @@ export class AppComponent implements OnInit, AfterViewInit  {
 
   addQueueItem(queues:any,changes:any){
     for (let row of queues.checked){
-      var item:any = {};
-      for (let key in row){
-        if (key != 'target' && key != 'id'){
-          item[key] = row[key];
+      if (!row.updated){
+        var item:any = {};
+        for (let key in row){
+          if (key != 'target' && key != 'id'){
+            item[key] = row[key];
+          }
         }
+        changes.push(item);  
       }
-      changes.push(item);
     }
     for (let row of queues.added){
       var item:any = {};
@@ -1848,6 +1885,8 @@ export class AppComponent implements OnInit, AfterViewInit  {
       this.setSession(node);
     }else if(node.data.type && node.data.type == 'logs'){
       this.setLogs(node);
+    }else if (node.data.type && node.data.type == 'errors'){
+      this.frontend = node.data;
     }
     else{
       this.data_type = 'test';
