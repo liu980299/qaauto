@@ -16,27 +16,49 @@
   </div>  
   
   <mat-form-field [ngStyle]="{'minWidth': ' 100%'}"  *ngFor="let header of headers">
-  <mat-label>{{header}}</mat-label>    
+  <mat-label>Expected {{header}}</mat-label>    
   <mat-select (selectionChange)="changeValue(header,$event)" [value]="new_item[header]" [multiple]="multiple_list.indexOf(header) >=0" [required]="target!='Error'">
       <mat-option [value]="item.name" *ngFor="let item of candidates[header]" [disabled]="item.name!='All'&&this.disabled[header]">{{item.name}}</mat-option>
   </mat-select>
   </mat-form-field>
-  <mat-form-field style="width: 100%;" *ngIf="target=='Error'">
-    <mat-label>Name</mat-label>
+
+  <mat-form-field [ngStyle]="{'minWidth': ' 100%'}">
+    <mat-label>Jira</mat-label>
+    <mat-select (selectionChange)="changeValue('Jira',$event)" [value]="new_item['Jira']" >
+      <mat-option [value]="item.id" *ngFor="let item of data.jiras" [disabled]="item.id == new_item.Jira">{{item.id}}-{{item.summary}}</mat-option>
+  </mat-select>  
+  </mat-form-field>
+  <mat-checkbox [checked]="new_item.auto_link"  (change)="set_auto_link($event)" *ngIf="new_item.Jira">Auto Link Failed Scenarios</mat-checkbox>  
+
+  <mat-form-field style="width: 100%;">
+    <mat-label>Category</mat-label>
     <input type="text"
-           placeholder="Please input a name for the errors matching the specified rule"           
+           placeholder="Please input the rule category"           
            matInput           
-           [(ngModel)]="new_item['Name']" (ngModelChange)="changeValue('Name',$event)" required>  
+           [matAutocomplete]="autoCategory" [formControl]="categoryCtrl" (ngModelChange)="setCategory(categoryCtrl.value)" required          >
+    <mat-autocomplete  #autoCategory="matAutocomplete">      
+        <mat-option *ngFor="let target of filteredCategory|async" [value]="target">{{target}}</mat-option>      
+    </mat-autocomplete>
+    <mat-error *ngIf="categoryCtrl.hasError('length')">
+      Please make sure the length greather than 10!
+    </mat-error>
   </mat-form-field>
 
   <mat-form-field style="width: 100%;" *ngIf="target=='Error'">
-    <mat-label>Category</mat-label>
+    <mat-label>Name</mat-label>
     <input type="text"
-           placeholder="Please input a category for the specified errors attributed to"           
+           placeholder="Please input a name for the specified rule"           
            matInput           
-           [(ngModel)]="new_item['Category']" (ngModelChange)="changeValue('Category',$event)" required>
-  </mat-form-field>
-  <mat-form-field style="width: 100%;" *ngIf="target=='Error'">
+           [matAutocomplete]="autoName" [formControl]="nameCtrl" (ngModelChange)="setName($event)" required>
+        <mat-autocomplete  #autoName="matAutocomplete">      
+            <mat-option *ngFor="let target of filteredNames|async" [value]="target">{{target}}</mat-option>      
+        </mat-autocomplete>
+        <mat-error *ngIf="categoryCtrl.hasError('length')">
+          Please make sure the length greather than 10!
+        </mat-error>
+    
+  </mat-form-field >
+  <mat-form-field style="width: 100%;" *ngIf="target=='Error' && isNew" >
     <mat-label>Level</mat-label>    
     <mat-select (selectionChange)="changeValue('Level',$event)" [value]="new_item['Level']" required>
         <mat-option value="High" >High</mat-option>

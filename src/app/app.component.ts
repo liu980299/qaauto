@@ -13,6 +13,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { DialogChangeDialog } from './dialog.component';
 import { getBadgeText, getErrorBadgeText, getExpectedDupicates, getExpectedError, ScenarioComponent, updateError } from './scenario.component';
 import { SummaryComponent } from './summary.component';
+import { ConfigDialog } from './rule.component';
 
 declare var report_url: any,jira_url:any;
 interface TestNode {
@@ -115,11 +116,11 @@ export class AppComponent implements OnInit, AfterViewInit  {
   job_url = "";
   keepAlive:any;
   infinity_calls:any=[];
-  errors_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Name","Category","Level","Scenario","Comment"],
-  single_list:["Error"],multiple_list:["Scenario"],required:["Error","Name","Category","Level","Comment"]};
+  errors_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Jira","Category","Name","Level","Scenario","Comment"],
+  single_list:["Error"],multiple_list:["Scenario"],required:["Error","Category","Name","Level","Comment"]};
   duplicates_cfg:any = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Step","Scenario","Duplicate","Comment"],
   single_list:["Step"],multiple_list:["Scenario","Duplicate"]}; 
-;
+  error_rules:any = {};
   log_analysis: boolean;
   summaryPage : SummaryComponent;
   scenario : ScenarioComponent;
@@ -413,22 +414,42 @@ export class AppComponent implements OnInit, AfterViewInit  {
   }
 
   setErrorExpected(node:any){
-    for (let api of node.data.api_list){
-      for (let item of api.scenarios){
-        if (item.selected){
+    if (!node.data.isRule){
+      var new_rule = this.data[this.selectIndex].errors_cfg;    ;
+      new_rule.title = "New Rule";
+      new_rule.type = "Error";    
+      var envData = this.data[this.selectIndex];
+      new_rule.scenarios = envData.tests;
+      new_rule.jiras = envData.jiras;    
+      new_rule.new_error  = node.data.name;
+
+      this.dialog.open(ConfigDialog,{data:new_rule,width:"800px"}).afterClosed().subscribe((result:any)=>{this.checkConfig({type:'Error',data:new_rule.changes});});    
+    }else{      
+      var rule:any;
+      for (let item of node.data.scenarios){
+        if (item.selected){        
           item.error.expected = true;
-          updateError(item.error,item.scenario,this.data[this.selectIndex]);
+          rule = updateError(item.error,item.scenario,this.data[this.selectIndex]);
         }
-      }
-    }
-    this.checkConfig('Error');
+      } 
+      var change = {type:"Error",data:[{operation:"change",rule:rule}]}     
+      this.checkConfig(change);
+    }  
+    
+    // for (let item of node.data.scenarios){
+    //   if (item.selected){
+    //     item.error.expected = true;
+    //     updateError(item.error,item.scenario,this.data[this.selectIndex]);
+    //   }
+    // }
+    // this.checkConfig('Error');
   }
 
-  selectAll($event:any,api:any){
-    api.selected_all = $event.checked;
-    for (let item of api.scenarios){
+  selectAll($event:any,node:any){
+    node.data.selected_all = $event.checked;
+    for (let item of node.data.scenarios){
       if (!item.error.expected){
-        item.selected = api.selected_all;
+        item.selected = node.data.selected_all;
       }      
     }
   }
@@ -533,7 +554,32 @@ export class AppComponent implements OnInit, AfterViewInit  {
     this.loadLogAnalysis(data);
   }
 
-  
+  matchRule(rule:any,error_name:string){
+    if (rule.Error && rule.Error.length > 0){
+      var items = rule.Error.split("{}");
+      if (items.filter((item:string)=>error_name.indexOf(item)<0).length == 0){
+        return true;
+      }
+    }
+    return false;
+  }
+
+  initialRule(rule:any,env_name:string,log_file:string){
+    if (!rule.children){
+      rule.children = {}
+      rule.scenario_list = {};
+    }
+    if (!(env_name in rule.children)){
+      rule.children[env_name] = {};                                
+      rule.scenario_list[env_name] = {};
+    }
+    if (!(log_file in rule.children[env_name])){
+      rule.children[env_name][log_file] = [];
+      rule.scenario_list[env_name][log_file] = [];
+    }
+
+    
+  }
 
   loadLogAnalysis(data:any){
     console.log(data);
@@ -542,6 +588,10 @@ export class AppComponent implements OnInit, AfterViewInit  {
       for (let env of this.data){
         if (envData.env == env.name && (env.end_time.indexOf(envData.test_date)>=0 || location.origin.indexOf("local")>0)){
           this.log_analysis = true;
+          env.jira_url = jira_url;
+          if (!(env.name in this.error_rules)){
+            this.error_rules[env.name] = {};
+          }
           if (env.perspectives.length == 4){
             var errorData = {name:"Errors",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};            
             var duplicatedData = {name:"Duplicates",data:new MatTreeNestedDataSource<TestNode>(),selected:false,search:""};
@@ -550,8 +600,8 @@ export class AppComponent implements OnInit, AfterViewInit  {
             env.tests = envData.tests;
             env.main_log = envData.main_log;
             if (!this.errors_cfg){
-                this.errors_cfg = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Scenario","Category","Level","Comment"],
-                single_list:["Error"],multiple_list:["Scenario"]}; 
+                this.errors_cfg = {data:{},queues:{checked:[],removed:[],added:[]},headers:["Error","Jira","Scenario","Category","Name","Level","Comment"],
+                single_list:["Error","Jira"],multiple_list:["Scenario"]}; 
             }
             env.errors_cfg = {start_time:env.start_time,end_time:env.end_time};
             for (let key in this.errors_cfg){
@@ -580,28 +630,30 @@ export class AppComponent implements OnInit, AfterViewInit  {
                 if (scenario.error_summary && scenario.error_summary.length > 0){
                   for (let error of scenario.error_summary){
                     if (checked_errors.length > 0){
-                      for (let rule of checked_errors){
-                        var items = rule.Error.split("{}");
-                        if (items.filter((item:string)=>error.name.indexOf(item)<0).length == 0){
-                          if (rule.Scenario.indexOf(scenario.name) >= 0 || rule.Scenario.indexOf('All') >=0 ){
+                      for (let rule of checked_errors){                        
+                        if (this.matchRule(rule,error.name)){
+                          if (rule.Scenario && (rule.Scenario.indexOf(scenario.name) >= 0 || rule.Scenario.indexOf('All') >=0 )){
                             error.expected = true;
-                            error.disabled = true;
+                            error.disabled = true;                            
                             for (let step of error.steps ){
                               getErrorBadgeText(step);
                             }                            
                           }
+                          error.rule = rule;
                         }
                       }
+                      if (!error.rule){
+                        if (!(error.name in this.errors_cfg.data)){
+                          env.errors_cfg.data[error.name] = {}
+                        }
+                        error.scenario = scenario_name;
+                        if (!(scenario_name in env.errors_cfg.data[error.name])){
+                          env.errors_cfg.data[error.name][scenario_name]= [error];
+                        }else{
+                          env.errors_cfg.data[error.name][scenario_name].push(error);
+                        }                          
+                      }
                     }
-                    if (!(error.name in this.errors_cfg.data)){
-                      env.errors_cfg.data[error.name] = {}
-                    }
-                    error.scenario = scenario_name;
-                    if (!(scenario_name in env.errors_cfg.data[error.name])){
-                      env.errors_cfg.data[error.name][scenario_name]= [error];
-                    }else{
-                      env.errors_cfg.data[error.name][scenario_name].push(error);
-                    }                    
                   }
                 }               
                 if (scenario.duplicated){
@@ -679,7 +731,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
             env.expected_errors = 0;
             env.expected_steps = 0;
             for (let log_name in envData.errors){
-              var log_error_node:TestNode = {name:log_name,children:[],data:{type:"categories"}};
+              var log_error_node:TestNode = {name:log_name,children:[],data:{type:"logfiles",name:log_name,items:{}}};
               error_nodes.push(log_error_node);
               var log_errors = envData.errors[log_name];
               var log_total = 0;
@@ -688,129 +740,171 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   env.stacks[log_name] = data;
                 }
                 );
-              for (let category in log_errors){
+              for (let level in log_errors){
                 var sub_total = 0;  
-                if (category == 'fatal' && log_errors['fatal'].length > 0){
-                  var fatal_node:TestNode={name:"fatal",children:[],data:{type:"categories"}};
-                  log_error_node.children?.push(fatal_node);
-                  for (var error of log_errors['fatal']){
-                    var error_node:TestNode = {name:error.name,children:[],data:{type:"errors"}};
-                    error_node.data = error;
-                    error_node.data.log_file = log_name;
-                    fatal_node.children?.push(error_node);
-                    sub_total++;
-                  }
+                // if (category == 'fatal' && log_errors['fatal'].length > 0){
+                //   var fatal_node:TestNode={name:"fatal",children:[],data:{type:"categories"}};
+                //   log_error_node.children?.push(fatal_node);
+                //   for (var error of log_errors['fatal']){
+                //     var error_node:TestNode = {name:error.name,children:[],data:{type:"errors"}};
+                //     error_node.data = error;
+                //     error_node.data.log_file = log_name;
+                //     fatal_node.children?.push(error_node);
+                //     sub_total++;
+                //   }
 
-                }
-                else{
-                  var category_node:TestNode ={name:category,children:[],data:{type:"categories"}};
-                                
-                  for (var error_type in log_errors[category]){
-                    var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors",apis:{"others":[]},scenarios:[]}};                    
-                    var error_list = log_errors[category][error_type];
-                    var scenario_dict:any = {};
-                    var session_dict:any = {};
-                    var failed_tests = 0;
-                    var apis:any = {};
-                    for (let error of error_list){
-                        if (error.scenario){
-                          if (error.api){
-                            apis[error.scenario] = error.api;
-                          }
-                          if (error.scenario in scenario_dict){
-                            scenario_dict[error.scenario].num += 1;
-                            
-                          }else{
-                            scenario_dict[error.scenario] = {num:1,error:error};
-                            if (error.scenario in env.tests && env.tests[error.scenario].result == "failed"){
-                              failed_tests++;
-                            }  
-                          }
-                        }else{
-                          var error_name = error.thread;  
-                          if (error.user){
-                            error_name = error.user;
-                          }                        
-                          if (error.session){                                                        
-                            if (!(error.session in session_dict)){
-                              session_dict[error.session] = {name:error_name,num:0,data:error}                              
-                            }                            
-                            session_dict[error.session].num += 1;
-                            error.type = "sessions"
-                          }else{
-                            error.type = "logs"
-                            var error_node:TestNode = {name:error_name,children:[],data:{type:error.type}};
-                            error_node.data = error;
-                            error_node.data.log_file = log_name;                          
-                            error_type_node.children?.push(error_node);    
-                          }
-                        }                        
-                    }
-                    for (let session_id in session_dict){
-                      var error_node:TestNode = {name:session_dict[session_id].name,children:[],data:session_dict[session_id].data};
-                      error_node.data.type="sessions";
-                      error_node.data.log_file = log_name;
-                      if (session_dict[session_id].num > 1){
-                        error_node.name += " (" + session_dict[session_id].num +")";                                                
-                      }
-                      error_type_node.children?.push(error_node);  
-                    }
-                    for (let scenario in scenario_dict){
-                      var error_node:TestNode = {name:scenario,children:[],data:{type:"scenarios",name:scenario}};                      
-                      if (scenario_dict[scenario].num > 1){
-                        error_node.name += " (" + scenario_dict[scenario].num + ")";
-                      }
-                      error_node.data.is_new = true;
-                      if (scenario in env.scenarios){
-                        error_node = env.scenarios[scenario];
-                        error_node.data.failed = true
-                      }
-                      error_node.data.log_file = log_name
-                      for (let error of env.tests[scenario].error_summary){
-                        if (error.name == scenario_dict[scenario].error.name){
-                          error_node.data.error = error;
-                          if (scenario in apis){
-                            if (!(apis[scenario] in error_node.data.apis)){
-                              error_node.data.apis[apis[scenario]] = [];
+                // }
+                // else{
+                  var level_node:TestNode ={name:level,children:[],data:{type:"levels",name:level,items:{}}};
+                  var isRule = true;
+                  if (level.toLowerCase()=="others"){
+                    isRule = false;
+                  }                  
+                  for (var category in log_errors[level]){
+                    var category_node:TestNode = {name:category,children:[],data:{type:"categories",name:category,items:{}}};
+                    var category_total = 0;                                    
+                    for (var error_type in log_errors[level][category]){                      
+                      var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors",isRule:isRule,scenarios:[],queues:{}}};                    
+                      error_type_node.data.queues.checked = this.errors_cfg.queues.checked.filter((item:any)=>item.Name == error_type&&item.Category == category);
+                      error_type_node.data.category = category;
+                      error_type_node.data.level = level;
+                      error_type_node.data.headers = this.errors_cfg.headers;  
+                      error_type_node.data.single_list = this.errors_cfg.single_list;
+                      error_type_node.data.multiple_list = this.errors_cfg.multiple_list;                    
+                      error_type_node.data.queues.added = this.errors_cfg.queues.added.filter((item:any)=>item.Name == error_type&&item.Category == category);
+                      error_type_node.data.queues.removed = this.errors_cfg.queues.removed.filter((item:any)=>item.Name == error_type&&item.Category == category);
+                      error_type_node.data.name = error_type;
+                      var error_list = log_errors[level][category][error_type];
+                      var scenario_dict:any = {};
+                      var session_dict:any = {};
+                      var failed_tests = 0;
+                      for (let error of error_list){                     
+                          if (error.scenario){    
+                            if (error.scenario in scenario_dict){
+                              scenario_dict[error.scenario].num += 1;
+                            }else{
+                              scenario_dict[error.scenario] = {num:1,error:error};
+                              if (error.scenario in env.tests && env.tests[error.scenario].result == "failed"){
+                                failed_tests++;
+                              }  
                             }
-                            error_node.data.apis[apis[scenario]].push({scenario:env.tests[scenario],selected:false,error:error});                            
                           }else{
-                            error_node.data.apis.others.push({scenario:env.tests[scenario],selected:false,error:error});
+                            var error_name = error.thread;  
+                            if (error.user){
+                              error_name = error.user;
+                            }                        
+                            if (error.session){                                                        
+                              if (!(error.session in session_dict)){
+                                session_dict[error.session] = {name:error_name,num:0,error:error}                              
+                              }                            
+                              session_dict[error.session].num += 1;
+                              error.type = "sessions"
+                            }else{
+                              error.type = "logs"
+                              var error_node:TestNode = {name:error_name,children:[],data:{type:error.type}};
+                              error_node.data = error;  
+                              if (error.rule){  
+                                error_node.data.rule = this.getRule(error.rule);
+                              }                          
+                              error_node.data.log_file = log_name; 
+                              error_type_node.children?.push(error_node);    
+                            }
+                          }                                
+                      }
+                      for (let session_id in session_dict){
+                        var error_node:TestNode = {name:session_dict[session_id].name,children:[],data:session_dict[session_id].error};
+                        error_node.data.type="sessions";
+                        error_node.data.log_file = log_name; 
+                        if (session_dict[session_id].error.rule){
+                          error_node.data.rule = this.getRule(session_dict[session_id].error.rule);                       
+                        }
+                       
+                        if (session_dict[session_id].num > 1){
+                          error_node.name += " (" + session_dict[session_id].num +")";                                                
+                        }
+                        error_type_node.children?.push(error_node);  
+                      }
+                      for (let scenario in scenario_dict){
+                        var error_node:TestNode = {name:scenario,children:[],data:{type:"error_scenario",name:scenario}};                      
+                        if (scenario_dict[scenario].num > 1){
+                          error_node.name += " (" + scenario_dict[scenario].num + ")";
+                        }
+                        error_node.data.is_new = true;
+                        error_node.data.api = scenario_dict[scenario].error.api? scenario_dict[scenario].error.api : "others";
+                        if (scenario in env.scenarios){
+                          error_node.data.scenario = env.scenarios[scenario];
+                          error_node.data.failed = true;
+                        }
+                        error_node.data.log_file = log_name
+                        if (!(scenario in env.tests)){
+                          console.log("Scenario not found in tests: " + scenario);
+                        }
+                        for (let error of env.tests[scenario].error_summary){
+                          if (error.name == scenario_dict[scenario].error.name){
+                            error_node.data.error = error;
+                            if (scenario_dict[scenario].error.rule){
+                              var rule = this.getRule(scenario_dict[scenario].error.rule);                            
+                              this.initialRule(rule,env.name,log_name);
+                              error.rule = rule;  
+                              error_node.data.rule = rule;
+                            }                            
+                            error.log_file = log_name;
+                            var scenario_item = {scenario:env.tests[scenario],selected:false,error:error,rule:scenario_dict[scenario].error.rule}
+                            error_type_node.data.scenarios.push(scenario_item);
+                            if (error.rule){
+                              if (!error.rule.scenario_list[env.name][log_name]){
+                                console.log(error);
+                              }
+                              error.rule.scenario_list[env.name][log_name].push(scenario_item);
+                            }                            
                           }
-                          error_type_node.data.scenarios.push({scenario:env.tests[scenario],selected:false,error:error});
+                        }
+                        if (!error_node.data.error || !error_node.data.error.expected){
+                          if (!error_node.data.rule ){
+                            if (level.toLowerCase() != "others"){
+                              error_node.data.category = category;
+                              console.log(error_node);
+                            }
+                          }else{
+                            if (!error_node.data.rule.children[env.name][log_name]){
+                              console.log(error_node);
+                            }
+                            error_node.data.rule.children[env.name][log_name].push(error_node);
+                          }                          
+                          error_type_node.children?.push(error_node);  
+                        }                      
+                      }
+                      category_node.data.items[error_type] = scenario_dict;
+                      if (isRule && error_type_node.children && error_type_node.children.length == 0){                      
+                        for(let item of error_type_node.children){
+                          var rule = item.data.rule;
+                          this.initialRule(rule,env.name,log_name);
+                          rule.children[env.name][log_name].push(item);
+                          item.data.rule = rule;
                         }
                       }
-                      if (!error_node.data.error || !error_node.data.error.expected){
-                        if (!error_node.data.error){
-                          console.log(error_node);
-                        }
-                        
-                        error_type_node.children?.push(error_node);  
-                      }                      
+                      
+                      error_type_node.name = error_type + "(" + failed_tests + "/" + error_list.length +")";
+                      error_type_node.data.total = error_list.length;
+                      error_type_node.data.failed = failed_tests;                    
+                      if (error_type_node.children?.length && error_type_node.children?.length > 0){
+                        category_total += error_list.length;                        
+                        category_node.children?.push(error_type_node);
+                      }
                     }
-                    error_type_node.data.api_list = [];
-                    for (let api in error_type_node.data.apis){
-                      error_type_node.data.api_list.push({name:api,scenarios:error_type_node.data.apis[api]});
-                    }
-                    error_type_node.name = error_type + "(" + failed_tests + "/" + error_list.length +")";
-                    error_type_node.data.total = error_list.length;
-                    error_type_node.data.failed = failed_tests;                    
-                    if (error_type_node.children?.length && error_type_node.children?.length > 0){
-                      sub_total += error_list.length;
-                      category_node.children?.push(error_type_node);
+                    category_node.name = category_node.name + "(" + category_total + ")";
+                    if (category_node.children && category_node.children.length > 0){
+                      level_node.children?.push(category_node);
+                      sub_total += category_total;
                     }
                   }
-                  category_node.name = category_node.name + "(" + sub_total + ")";
-                  if (category_node.children && category_node.children.length > 0){
-                    log_error_node.children?.push(category_node);
-                  }
-                  
+                  level_node.name = level + "(" + sub_total + ")";                  
+                  log_total += sub_total;  
+                  log_error_node.children?.push(level_node);
                 }
-                log_total += sub_total;
-              }
-
-              env.error_num  += log_total;
-            }
+                env.error_num  += log_total;  
+                log_error_node.name = log_error_node.name + "(" + log_total + ")";                        
+              }              
             errorData.data.data = error_nodes;
             duplicatedData.data.data = duplicate_nodes;
             getExpectedError(env);
@@ -822,12 +916,401 @@ export class AppComponent implements OnInit, AfterViewInit  {
         this.error_message = "Detected possible infinite calls in " + this.infinity_calls.join(",") + ", please select Duplicates in menu!"
       }
   }
-  checkConfig(cfg:string){
-    if (cfg == 'Error'){
+
+  getRule(error_type:string){
+    for (let rule of this.errors_cfg.queues.checked){
+      if (rule.Error == error_type){
+        return rule;
+      }
+    }    
+    console.log("Rule not found for error type: " + error_type);
+  }
+
+  removeError(rule:any,env_trees:any){
+    var index = this.data[this.selectIndex].errors_cfg.queues.added.indexOf(rule);
+    if (index >= 0){
+      this.data[this.selectIndex].errors_cfg.queues.added.splice(index,1);
+    }
+    index = this.data[this.selectIndex].errors_cfg.queues.checked.indexOf(rule);
+    if (index >= 0){
+      this.data[this.selectIndex].errors_cfg.queues.checked[index];
+    }
+    for (let env_name in env_trees){
+      var env_tree = env_trees[env_name];
+      var new_tree:TestNode[] = [];
+      for (let log_file of env_tree.tree){
+        if (rule.children && rule.children[env_name] && rule.children[env_name][log_file.data.name]){          
+          var new_file:TestNode = {name:log_file.data.name,children:[],data:{type:"logfiles"}};
+          for (let level of log_file.children){
+            var new_level:TestNode = {name:level.data.name,children:[],data:{type:"levels",name:level.data.name,items:{}}};          
+            var level_changed = false;
+            if (level.data.name.toLowerCase() == "others"){   
+              level_changed = true;      
+              var categories:any = {};                        
+              for (let category of level.children){                                                
+                if (!(category.name in categories)){
+                  categories[category.name] = category;
+                }
+              }              
+              for (let error of rule.children[env_name][log_file.data.name]){
+                var api = error.data.api? error.data.api : "others";
+                if (error.data.error.expected){
+                  error.data.error.expected = false;
+                }
+                if (api in categories){
+                  var category_node = categories[api];
+                  var found = false;
+                  for (let error_node of category_node.children){
+                    if (error_node.data.name == error.data.error.name){
+                      error_node.children.push(error);                      
+                      found = true;
+                      break;
+                    }
+                  }
+                  if (!found){
+                    var error_node:TestNode = {name:error.data.error.name,children:[error],data:{type:"errors",isRule:false,scenarios:[],queues:{}}};
+                    category_node.children.push(error_node);
+                  }
+                }else{
+                  var new_category_node:TestNode = {name:api,children:[],data:{type:"categories",items:{}}};
+                  var error_node:TestNode = {name:error.data.error.name,children:[error],data:{type:"errors",isRule:false,scenarios:[],queues:{}}}
+                  new_category_node.children?.push(error_node);
+                  categories[api] = new_category_node;
+                  level.children?.push(new_category_node);
+                }              
+              }  
+            }else{
+              if (level.data.name == rule.Level){
+                for (let category of level.children){
+                  if (category.data.name == rule.Category){
+                    has_category = true;
+                    var has_error = false;
+                    for (let error of category.children){
+                      if (error.data.name == rule.Name){
+                        has_error = true;
+                        if (rule.original_id){
+                          var index = error.data.queues.added.indexOf(rule);
+                          if ( index > 0){
+                            error.data.queues.added.splice(index,1);
+                          }
+                        }else{
+                          error.data.queues.removed.push(rule);
+                        }
+                        
+                        for (let child of rule.children[env_name][log_file.data.name]){
+                          var index = error.children.indexOf(child);
+                          if (index >= 0){
+                            error.children.splice(index,1);
+                          }
+                        }
+                      }
+                    }                  
+                  }
+                }  
+              }
+              var has_category = false;
+            }
+            new_file.children?.push(level);
+          }
+          new_tree.push(new_file);        
+        }else{
+          new_tree.push(log_file);
+        }
+        
+      }
+      env_trees[env_name].tree = new_tree;
+      env_trees[env_name].changed = true;
+    }
+  }
+  newErrorNode(rule:any,envData:any,log_file:string):TestNode{
+    var error_node:TestNode = {name:rule.Name,children:[],data:{type:"errors",isRule:true,scenarios:[],queues:{}}};
+    error_node.data.queues.checked = [];
+    error_node.data.queues.added = [rule];
+    error_node.data.queues.removed = [];
+    error_node.data.name = rule.Name;
+    error_node.data.category = rule.Category;
+    error_node.data.level = rule.Level;
+    error_node.data.headers = this.errors_cfg.headers;  
+    error_node.data.single_list = this.errors_cfg.single_list;
+    error_node.data.multiple_list = this.errors_cfg.multiple_list;                    
+
+    error_node.data.rule = rule;
+    for (let item of rule.children[envData.name][log_file]){      
+        error_node.children?.push(item);
+        item.data.rule = rule;
+    }
+    return error_node;
+  }
+
+  isSameRule(rule:any,origin_rule:any){ 
+    if(origin_rule && origin_rule.Error == rule.Error && origin_rule.Level == rule.Level &&
+      origin_rule.Category == rule.Category && origin_rule.Name == rule.Name){
+      if (origin_rule.Scenario.length == rule.Scenario.length && 
+          origin_rule.Scenario.filter((item:any)=>rule.Scenario.indexOf(item) < 0).length == 0 &&
+          rule.Scenario.filter((item:any)=>origin_rule.Scenario.indexOf(item) < 0).length == 0){
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  changeLevel(source:any,env_trees:any){
+    for(var env_name in env_trees){
+      var env_tree = env_trees[env_name];
+      var changed:any = null;
+      var new_tree:TestNode[] = [];
+      for (let log_file of env_tree.tree){
+        var new_file:TestNode = {name:log_file.name,children:[],data:{type:"logfiles",name:log_file.data.name,items:{}}};        
+        var file_changed = false;
+        var l_index = 0;
+        for (let level of log_file.children){          
+          if (level.data.name == source.old_level){
+            var c_index = 0;
+            for(let category of level.children){
+              if (category.data.name == source.category){
+                var index = 0;
+                for (let name of category.children){                  
+                  if (name.data.name == source.name){                    
+                    changed = name;                     
+                    file_changed = true;
+                    break;
+                  }
+                  index++;
+                }
+                if (changed){
+                  category.children.splice(index,1);
+                  break;
+                }
+              }
+              c_index++;
+            }
+            if (file_changed){
+              if (level.children[c_index].children.length == 0){
+                level.children.splice(c_index,1);    
+              }
+              break;
+            }
+          }
+          l_index++;
+        }
+        if (file_changed){
+          if (log_file.children[l_index].children.length == 0){
+            log_file.children.splice(l_index,1);
+          }
+          var has_level = false;
+          for (let level of log_file.children){
+            new_file.children?.push(level)
+            if (level.data.name == source.level){
+              var has_category = false;
+              var has_level = true;
+              for (let category of level.children){
+                if (category.data.name == source.category){
+                  has_category = true;
+                  category.children.push(changed);
+                  break;
+                }
+              }
+              if (!has_category){
+                var new_category:TestNode = {name:source.category,children:[],data:{type:"categories",items:{}}};
+                new_category.children?.push(changed)
+                level.children.push(new_category)
+              }
+            }            
+          }
+          if (!has_level){
+            var new_level:TestNode = {name:source.level,children:[],data:{type:"level",items:{}}};
+            var new_category:TestNode = {name:source.category,children:[],data:{type:"categories",items:{}}};
+            new_category.children?.push(changed);
+            new_level.children?.push(new_category);
+            new_file.children?.push(new_level);
+          }
+          new_tree.push(new_file);
+        }else{
+          new_tree.push(log_file);
+        }
+      }  
+      if (changed){
+        env_tree.tree = new_tree;
+        env_tree.changed = true;
+      }
+    }
+
+  }
+
+  updateErrors(changes:any){
+    var env_trees:any = {};
+    for (let envData of this.data){        
+      env_trees[envData.name] = {changed:false,tree:[]};
+      for (let node of envData.perspectives[4].data.data){
+          env_trees[envData.name].tree.push(node);
+        }
+    }    
+    for (let change of changes){      
+      var rule = change.rule;
+      if (change.operation == "update"){
+        continue;
+      }
+      if (change.operation == "remove"){
+        this.removeError(rule, env_trees);          
+        continue;  
+      }
+      if (change.operation == "level"){
+        this.changeLevel(change.change,env_trees)
+        continue;
+      }
+      for (let envData of this.data){               
+        var tree_errors = env_trees[envData.name].tree;
+        var new_tree:TestNode[] = [];   
+        for(let log_file of tree_errors){
+          var file_changed = false; 
+          var new_file:TestNode = {name:log_file.name,children:[],data:{type:"logfiles",name:log_file.data.name,items:{}}};
+          var has_level = false;
+
+          file_changed = true;
+          for (let level of log_file.children){
+            var level_changed = false;            
+            var new_level:TestNode = {name:level.name,children:[],data:{type:"levels",name:level.data.name,items:{}}};
+            if (change.operation == "new" && level.data.name.toLowerCase() == "others"){              
+              for (let category of level.children){                                
+                var changed = false;
+                var new_category:TestNode = {name:category.data.name,children:[],data:{type:"categories",items:{},name:category.data.name}};
+                for (let error of category.children){
+                  if (this.matchRule(rule,error.name)){                    
+                    this.initialRule(rule,envData.name,log_file.data.name);                    
+                    for (let child of error.children){
+                      rule.children[envData.name][log_file.data.name].push(child); 
+                      child.data.rule = rule;
+                    }
+                    for (let scenario of error.data.scenarios){
+                      scenario.rule = rule.Error;
+                      rule.scenario_list[envData.name][log_file.data.name].push(scenario);
+                    }                    
+                    changed = true;
+                  }else{                  
+                    new_category.children?.push(error);                    
+                  }                  
+                }
+                if (changed){
+                  level_changed = true;
+                  if (new_category.children && new_category.children.length > 0){
+                    new_level.children?.push(new_category);                   
+                  }
+                }else{
+                  new_level.children?.push(category);
+                }
+              }  
+            }else{
+              if (  rule.children && rule.children[envData.name] && rule.children[envData.name][log_file.data.name] &&
+                level.data.name == rule.Level){
+                has_level = true;              
+                var has_category = false;
+                var new_category:TestNode = {name:rule.Category,children:[],data:{type:"categories",items:{}}};
+                for (let category of level.children){
+                  if (category.data.name == rule.Category){
+                    has_category = true;
+                    var has_error = false;
+                    for (let error of category.children){
+                      if (error.data.name == rule.Name){
+                        has_error = true;
+                        // var new_children:TestNode[] = [];
+                        // file_changed = true
+                        // if (change.operation == "update"){
+                        //   for (let child of error.children){
+                        //     if (rule.Scenario.indexOf(child.name) < 0){
+                        //       new_children.push(child);
+                        //     }
+                        //   }
+                        //   error.children = new_children;
+                        // }else{
+                          if (error.data.queues.added.indexOf(rule) < 0){                            
+                            // error.data.queues.added.push(rule);                            
+                            for (let child of rule.children[envData.name][log_file.data.name]){
+                              if (error.children.indexOf(child) < 0 ){
+                                error.children.push(child);
+                              }
+                              if (child.data.scenario && rule.Scenario.indexOf(child.data.scenario.name) >= 0){
+                                child.data.error.expected = true;
+                              }
+                            }
+                          }                      
+                          // }else{
+                          //   if (rule.original_id){
+                          //     var origin_rule = this.errors_cfg.queues.checked.find((item:any)=>item.id == rule.original_id);
+                          //     if (this.isSameRule(rule,origin_rule)){
+                          //       origin_rule.updated = false;
+                          //       var index = error.data.queues.added.indexOf(rule);
+                          //       if (index >= 0){
+                          //         error.data.queues.added.splice(index,1);                                  
+                          //       }
+                          //       index = this.errors_cfg.queues.added.indexOf(rule);                                
+                          //       if (index >= 0){
+                          //         this.errors_cfg.queues.added.splice(index,1);
+                          //       }
+                          //     }
+                          //   }
+                          // }
+                        // }
+                      }
+                    }
+                    if (!has_error){
+                      new_category.children?.push(this.newErrorNode(rule,envData,log_file.data.name));
+                      level_changed = true;
+                    } 
+                    new_level.children?.push(new_category);                                      
+                  }else{
+                    new_level.children?.push(category);
+                  }
+                }
+                if (!has_category){
+                  new_category.name = rule.Category;
+                  new_category.children?.push(this.newErrorNode(rule,envData,log_file.data.name));
+                  new_level.children?.push(new_category);
+                  level_changed = true;
+                }
+              }
+            }
+              if (level_changed){
+                file_changed = true;
+                new_file.children?.push(new_level);
+              }else{
+                new_file.children?.push(level);
+              }
+          }
+          if (rule.children && rule.children[envData.name]  && rule.children[envData.name][log_file.data.name] && !has_level){
+            var new_level:TestNode = {name:rule.Level,children:[],data:{type:"levels"}};
+            var new_category:TestNode = {name:rule.Category,children:[],data:{type:"categories",items:{}}};
+            new_category.children?.push(this.newErrorNode(rule,envData,log_file.data.name));
+            new_level.children?.push(new_category);
+            new_file.children?.push(new_level);
+            file_changed = true;
+          }
+          if (file_changed){
+            env_trees[envData.name].changed = true;            
+            new_tree.push(new_file);
+          }else{
+            new_tree.push(log_file);
+          }  
+          
+        }
+        if (env_trees[envData.name].changed){
+          env_trees[envData.name].tree = new_tree;            
+        }
+      }  
+    }
+    for (let envData of this.data){
+      if (env_trees[envData.name].changed){
+        envData.perspectives[4].data.data = env_trees[envData.name].tree;
+      }
+    }
+  }
+  checkConfig(cfg:any){
+    if (cfg.type == 'Error'){
+      this.updateErrors(cfg.data);
       this.changeErrors = this.errors_cfg.queues.added.length + this.errors_cfg.queues.removed.length;
     }
 
-    if (cfg == 'Duplicate'){
+    if (cfg.type == 'Duplicate'){
       this.changeDuplicates = this.duplicates_cfg.queues.added.length + this.duplicates_cfg.queues.removed.length;
     }
 
@@ -888,7 +1371,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
         item.id = index;
         index++;
         this.errors_cfg.queues.checked.push(item);
+        this.error_rules[item.Error] = {}
       }       
+      
     }
     if (data.duplicates_cfg){
       var index = 1;
@@ -925,7 +1410,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   change["dst"] = task.owner;
                   change.env = envData.name;
                   change.scenario = scenario_data.name;
-                  envData.changes.push(change)
+                  envData.task_changes.push(change)
                   
                 }
                 scenario_data.data.assigned = task.owner;
@@ -936,7 +1421,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
             }
           }
         }
-        this.conflict_changes.push({name:envData.name,changes:envData.task_changes})        
+        if (envData.task_changes.length > 0){
+          this.conflict_changes.push({name:envData.name,changes:envData.task_changes});
+        }        
       }
     }
     this.updateTaskChanges();
@@ -1303,6 +1790,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
       if (this.user){
         changes.user = this.user;
       }
+      // localStorage.setItem("changes",JSON.stringify(changes));
       if (location.origin.toLowerCase().indexOf("localhost") < 0){
         var requestData = new URLSearchParams();
         requestData.append("blob",JSON.stringify(changes));
@@ -1583,18 +2071,18 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
     this.containerDetail(this.data[this.selectIndex].timelines);
   }
-  assignNode(jira:any){
+  assignNode(jira:any,node:any){
     console.log(this.frontend);
     console.log(jira);
     this.assignSelf();
     var cases = this.data[this.selectIndex].perspectives[2].data.data;
     var cases_node:TestNode[] = [];
     var jira_id = jira.id;
-    if (this.frontend.node.data.jiras.indexOf(jira.id) <0){
-      this.frontend.node.data.changes.push(jira.id);
+    if (node.data.jiras.indexOf(jira.id) <0){
+      node.data.changes.push(jira.id);
     }else{
-      if(this.frontend.node.removed.indexOf(jira.id) >=0){
-        this.frontend.node.removed.splice(this.frontend.node.removed.indexOf(jira.id),1);
+      if(node.removed.indexOf(jira.id) >=0){
+        node.removed.splice(node.removed.indexOf(jira.id),1);
       }
     }
     
@@ -1605,15 +2093,15 @@ export class AppComponent implements OnInit, AfterViewInit  {
           case_node.children?.push(scenario_data);
         }
 
-        case_item.data.changes.push(this.frontend.node);
-        if (this.data[this.selectIndex].scenarios[this.frontend.name]){
-          case_node.children?.push(this.data[this.selectIndex].scenarios[this.frontend.name]);
+        case_item.data.changes.push(node);
+        if (this.data[this.selectIndex].scenarios[node.name]){
+          case_node.children?.push(this.data[this.selectIndex].scenarios[node.name]);
         }        
         if (case_item.data.jira_ref && case_item.data.jira_ref.length> 0){
           this.unsetJiraRef(case_item.data.jira_ref);
         }                
         cases_node.push(case_node);
-        this.frontend.node.data.changed = true;
+        node.data.changed = true;
       }else{
         cases_node.push(case_item);
       }
@@ -1886,7 +2374,14 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }else if(node.data.type && node.data.type == 'logs'){
       this.setLogs(node);
     }else if (node.data.type && node.data.type == 'errors'){
+      this.data_type="errors";      
       this.frontend = node.data;
+    }else if( node.data.type && node.data.type == 'error_scenario'){      
+      if (node.data.scenario){
+        this.setScenario(node.data.scenario);
+      }else{
+        this.setScenario(node);
+      }
     }
     else{
       this.data_type = 'test';
@@ -2515,25 +3010,24 @@ export class AppComponent implements OnInit, AfterViewInit  {
   updateReportChart(){
     this.barChartOptions = {...this.barChartOptions};
   }
+  deselectedNode(node:any){
+    if (node.children && node.children.length > 0){
+      for(let child of node.children){
+        this.deselectedNode(child);
+      }
+    }
+    if (node.data && node.data.selected){
+      node.data.selected = false;
+    }      
+
+  }
   clearNodes(){
     this.test_user_id = "";
     for (let env_data of this.data){
       for (let perspective of env_data.perspectives){
         for(let test of perspective.data.data){
           if (test.name.indexOf("Automation Test") >=0 || perspective.name == "Pages" ||perspective.name=="Errors"||perspective.name=="Duplicates"){
-              for(let job of test.children){
-                for(let feature of job.children){
-                  for(let scenario of feature.children){
-                    scenario.data.selected=false;
-                  }
-                  if(feature.data){
-                    feature.data.selected=false;
-                  }
-                }
-                if (job.data){
-                  job.data.selected=false;
-                }
-              }
+            this.deselectedNode(test);
           }else if (perspective.name != "Tests"){
             test.data.selected = false;
           }
@@ -2545,6 +3039,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
         }  
       }
     }
+  }
+  existingRules(rules:any){
+    return rules.filter((item:any)=>!item.updated);
   }
   openContainer(container:any){
     var context = container.scenarios[0].contexts[0];
@@ -2764,7 +3261,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
     return "";
   }
 
-  assignTask(owner:any){
+  assignScenario(scenario_data:any,owner:any){
     console.log(owner);
     var task_name = owner + "'s task";
     if (owner == "Unassigned"){
@@ -2773,7 +3270,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
 
     
     var tasks = this.data[this.selectIndex].perspectives[3].data.data;
-    var scenario_data = this.frontend.node;
+
     var srcTask,dstTask;
     var src_task_name;
     if (scenario_data.data.assigned){
@@ -2833,11 +3330,17 @@ export class AppComponent implements OnInit, AfterViewInit  {
       tasks = tasks.map((t:TestNode)=>t.name !== task.name? t:task)
     }
     this.data[this.selectIndex].perspectives[3].data.data = tasks ;
+    return;    
+  }
+
+  assignTask(owner:any){
+    var scenario_data = this.frontend.node;
+    this.assignScenario(scenario_data,owner);
     if (this.frontend.node.data.temp_comment.content && this.frontend.node.data.temp_comment.content.trim().length > 0){
       this.addComment(false);
     }    
     this.updateTaskChanges();
-    return;
+
   }
 
   //remove jira from task
@@ -2997,14 +3500,74 @@ export class AppComponent implements OnInit, AfterViewInit  {
           if (this.data[this.selectIndex].name == envData.name){
             this.jira = case_data;
             if(jira.scenario){
-              this.assignNode(this.data[this.selectIndex].jiras[case_data.data.index]);
-              this.data_type="test";
+              if (this.frontend.node.data.type == "errors"){
+                this.assignError(this.data[this.selectIndex].jiras[case_data.data.index],this.frontend.node);
+              }else{
+                this.assignNode(this.data[this.selectIndex].jiras[case_data.data.index],this.frontend.node);
+                this.data_type="test";  
+              }
             }      
           }
         }        
       // }      
       this.new_jira=null;      
     }    
+  }
+  assignError(jira:any,node:any){
+    var owner 
+    if (this.user){
+      owner = this.users[this.user.email].user;
+    }else{
+      owner = "Xiang.Liu";
+    }
+    node.data.jira = jira;
+    var jira_id = jira.id;
+    var scenarios = []
+    for(let scenario of node.data.scenarios){
+      if (scenario.selected){
+        var scenario_name = scenario.scenario.name;
+        if (this.data[this.selectIndex].scenarios[scenario_name]){
+          var scenario_data = this.data[this.selectIndex].scenarios[scenario_name];
+          this.assignScenario(scenario_data,owner);
+          scenarios.push(scenario_data);
+          if (scenario_data.data.jiras.indexOf(jira.id) < 0){
+            scenario_data.data.jiras.push(jira.id);
+          }else{
+            if(scenario_data.removed.indexOf(jira.id) >=0){
+              scenario_data.removed.splice(scenario.removed.indexOf(jira.id),1);
+            }
+          }
+             
+        }       
+      }
+    }
+    this.updateTaskChanges();
+    var cases = this.data[this.selectIndex].perspectives[2].data.data;
+    var cases_node:TestNode[] = [];
+    
+    
+    for(let case_item of cases){
+      if (case_item.name.indexOf(jira_id) >=0){
+        var case_node:TestNode = {name:case_item.name,data:case_item.data,children:[]};
+        for (let scenario_data of case_item.children){
+          case_node.children?.push(scenario_data);
+        }
+        for (let scenario of scenarios){
+          case_item.data.changes.push(scenario);         
+          case_node.children?.push(scenario);                 
+          if (case_item.data.jira_ref && case_item.data.jira_ref.length> 0){
+            this.unsetJiraRef(case_item.data.jira_ref);
+          }                
+        }
+        cases_node.push(case_node);
+        node.data.changed = true;  
+      }else{
+        cases_node.push(case_item);
+      }
+      
+    }
+    this.data[this.selectIndex].perspectives[2].data.data = cases_node;
+    this.updateJiraChanges();
   }
   sortData(sort:Sort){
     const data = this.datasources.slice();

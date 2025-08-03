@@ -196,34 +196,68 @@ export function getNewId(queue:any){
 
 export function updateError(error:any,scenario:any,envData:any){
     var del_error = null;
-    var index = 0;
-    for (var err_cfg of envData.errors_cfg.queues.added){
-        if (err_cfg.Error == error.name){
-            del_error = err_cfg;
-            break;
+    var old_error = null;    
+    var rule = null;
+    if (error.rule){
+        for (var err_cfg of envData.errors_cfg.queues.checked){
+            if (error.rule.Error == err_cfg.Error){
+                old_error = err_cfg;            
+                break;
+            }        
         }
-        index++;
+        var index = 0;
+        for (var err_cfg of envData.errors_cfg.queues.added){
+            if (error.rule.Error == err_cfg.Error){
+                del_error = err_cfg;
+                break;
+            }
+            index++;
+        }    
     }
     if (error.expected){
         if (!del_error){
             var new_id = getNewId(envData.errors_cfg.queues.added)
-            envData.errors_cfg.queues.added.push({Error:error.name,Scenario:[scenario.name],target:[],Category:"Test",Name:"Expected Error",Level:"Low",id:new_id});
+            var new_error:any = {Error:error.name,Scenario:[scenario.name],target:[],Category:"Test",Name:"Expected Error",Level:"Low",id:new_id}
+            // new_error.children = {};
+            // new_error.scenario_list = {};
+            // new_error.children[envData.name] = {};
+            // new_error.scenario_list[envData.name] = scenario.name;
+            // new_error.children[envData.name][error.log_file] = [];
+            // new_error.scenario_list[envData.name][error.log_file]=[];
+            var operation = "new";
+            if (old_error){
+                new_error.Category = old_error.Category;
+                new_error.Name = old_error.Name;
+                new_error.Level = old_error.Level;
+                new_error.original_id = old_error.id;
+                old_error.updated = true; // mark old error as updated
+                new_error.children = old_error.children;
+                new_error.scenario_list = old_error.scenario_list;
+                operation = "update";
+                for (let scenario_name of old_error.Scenario){
+                    if (!new_error.Scenario.includes(scenario_name)){
+                        new_error.Scenario.push(scenario_name);
+                    }
+                }                
+                new_error.target.push(envData.errors_cfg.data[error.name][scenario.name])                
+            }
+            envData.errors_cfg.queues.added.push(new_error);
+            rule = {operation:operation,rule:new_error}
             error.cfg_id = new_id;
         }else{
             if (!del_error.Scenario.includes(scenario.name)){
                 del_error.Scenario.push(scenario.name);
-                del_error.target.push(envData.errors_cfg.data[error.name][scenario.name])                
+                del_error.target.push(envData.errors_cfg.data[error.name][scenario.name])
+                rule = {operation:"update",rule:del_error}                                
             }
         }
     }
     else{
         if (del_error){
-            if (del_error.Scenario.length > 1){
+            if (del_error.Scenario.length >= 1){
                 del_error.Scenario.splice(del_error.Scenario.indexOf(scenario.name),1);
             }
-            if (del_error.Scenario.length == 0){                
-                envData.errors_cfg.queues.added.splice(index,1); 
-            }
+            rule = {operation:"update",rule:del_error};
         }
     }
     for(let step of error.steps){
@@ -243,8 +277,8 @@ export function updateError(error:any,scenario:any,envData:any){
         }
         getErrorBadgeText(step);
     }
-    getExpectedError(envData);
-
+    getExpectedError(envData);    
+    return rule;
 }
 
 @Component({    
@@ -260,7 +294,7 @@ export class ScenarioComponent  implements OnInit {
     @Input() envData:any;
     @Input() configure:any;
     @Input() parent:any;
-    @Output() configChange = new EventEmitter<string>()
+    @Output() configChange = new EventEmitter<any>()
     options = ["Globally for all tests","All steps in this test"];
     step_options = ["Globally for any test","this step in this test"];
     buttonTxtDuplicated = "Show Duplicates Summary";
@@ -305,8 +339,8 @@ export class ScenarioComponent  implements OnInit {
 
     }
     changeError(error:any,scenario:any,envData:any){
-        updateError(error,scenario,envData);
-        this.configChange.emit('Error');
+        var rule = updateError(error,scenario,envData);        
+        this.configChange.emit({type:'Error',data:[rule]});
         
     }
     setErrorExpected(error:any,option:string){
