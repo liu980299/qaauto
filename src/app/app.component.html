@@ -62,9 +62,9 @@
             [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && (!node.data.is_new||node.data.failed)"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
             [class.expected] =  "(perspective.name=='Duplicates' && node.data.is_duplicate_expected) || (perspective.name=='Errors' && node.data.error && node.data.error.expected)"
-            [class.changed]="node.data && node.data.changes && node.data.removed && node.data.changes.length + node.data.removed.length > 0 && !node.data.selected" 
+            [class.changed]="getChangeCount(node) > 0 && !node.data.selected" 
             [class.selected]="node.data && node.data.selected"            
-            >{{node.name}}<span *ngIf="perspective.name=='Jiras'||perspective.name=='Tasks'" [matBadge]="node.data.changes.length+node.data.removed.length" [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small"></span>        
+            >{{node.name}}<span *ngIf="(perspective.name=='Jiras'||perspective.name=='Tasks')" [matBadge]="getChangeCount(node)" [matBadgeHidden]="getChangeCount(node) == 0" matBadgeColor="accent"  matBadgeSize="small"></span>
             </button>
         </mat-tree-node>
           <!-- There is inline padding applied to this node using styles.
@@ -79,11 +79,17 @@
                   </mat-icon>
                 </button>
                 <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
-                <span *ngIf="perspective.name!='Tasks' && perspective.name!='Jiras' && (!node.data || node.data.type!='errors')">{{node.name}}</span>
+                <span *ngIf="perspective.name!='Tasks' && perspective.name!='Jiras' && (!node.data )">{{node.name}}</span>
+                <button *ngIf="(perspective.name=='Tests' || perspective.name=='Pages')&&node.data" [class.selected]="node.data && node.data.selected" [matBadge]="getChangeCount(node)" [matBadgeHidden]="getChangeCount(node) == 0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)"
+                      [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && (!node.data.is_new||node.data.failed)"
+                      [class.jira]="node.data && node.data.JIRA && !node.data.selected"
+                      [class.changed]="getChangeCount(node) > 0 && !node.data.selected" 
+                      [class.selected]="node.data && node.data.selected"            
+            >{{node.name}}</button>
                 <button *ngIf="perspective.name=='Tasks'" [class.selected]="node.data && node.data.selected" [matBadge]="node.data.task_changes" [matBadgeHidden]="node.data.task_changes==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
                 <button *ngIf="perspective.name=='Errors' && node.data.type=='errors'" [class.selected]="node.data && node.data.selected" (click)="selectNode(node)">{{node.name}}</button>
-                <button *ngIf="perspective.name=='Jiras'" [class.selected]="node.data && node.data.selected" [matBadge]="node.data.changes.length+node.data.removed.length" [class.selected]="node.data && node.data.selected" 
-                [matBadgeHidden]="node.data.changes.length+node.data.removed.length==0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)">
+                <button *ngIf="perspective.name=='Jiras'" [class.selected]="node.data && node.data.selected" [matBadge]="getChangeCount(node)" [class.selected]="node.data && node.data.selected" 
+                [matBadgeHidden]="getChangeCount(node) == 0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)">
                   {{node.name}}</button>
               </div>
               <!-- There is inline padding applied to this div using styles.
@@ -409,7 +415,7 @@
       <div style="display: block;height: 100%;" *ngIf="workspace=='Errors' && !node">
         <summary [data]="data[selectIndex].errors_cfg" #summaryPage [envData] = "data[selectIndex]" [envs]="data" (configChange)="checkConfig($event)"></summary>
       </div>     
-      <div style="display: block;height: 100%;" *ngIf="workspace=='Errors' && node && node.data.type=='errors'">
+      <div style="display: block;height: 100%;" *ngIf="workspace=='Errors' && node && data_type=='errors'">
         <h2>{{node.name}}</h2>      
 
         <h3>Total Times happened : {{node.data.total}}</h3>
@@ -421,9 +427,9 @@
         <div *ngIf = "node.data.scenarios.length > 0">
           <a href="{{jira_url}}{{jira}}" target="_blank" *ngIf="node.data.jira">{{node.data.jira.id}}</a>    
           <button  mat-raised-button  color="primary"  (click)="setErrorExpected(node)">{{node.data.isRule?'Set Expected':'Configure Rule'}}</button>          
-        <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Link to a Jira in Wiki</button>            
+        <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu" [disabled]="node.data.failed==0">Link Failed Tests to a Jira in Wiki</button>            
         <mat-menu #menu="matMenu">
-          <button mat-menu-item (click)="assignJira()" class="menu-item" >Add a Jira</button>
+          <button mat-menu-item (click)="assignJiraError()" class="menu-item" >Add a Jira</button>
           <div *ngFor="let jira of data[selectIndex].jiras" >
           <button mat-menu-item (click)="assignError(jira,node)" class="menu-item" *ngIf="node && (!node.data.jira||node.data.jira.id.indexOf(jira.id)<0)">{{jira.id}}:{{jira.summary}}</button>              
           </div>
@@ -475,13 +481,14 @@
             
            </div>            
            <h3><a [href]="frontend.screenshots_url" target="_blank" *ngIf="frontend.screenshots_url" class="button">Download Screenshots Archive</a></h3> 
+           <h2 *ngIf="frontend.node.data.retest_result && frontend.node.data.retest_result == 'passed'"><a href="{{frontend.node.data.retest_url}}">Retest Passed</a></h2>
            <h3 *ngIf="frontend.node.data.last_success_test">
               <a [href]="frontend.node.data.last_success_test.url" target="_blank">The last successful test was performed {{frontend.node.data.last_success_test.test_time}}
                  with Portal version {{frontend.node.data.last_success_test.version}}</a>
               </h3>
               
-    
-          <h3 *ngIf="frontend.node.data.jiras.length - frontend.node.data.removed.length > 0">Jira:
+          <h3 *ngIf="frontend.node.data.session_id"><a [href]="frontend.node.data.grafana_url" target="_blank">Grafana Ingress Log</a></h3>
+          <h3 *ngIf="frontend.node.data.jiras && (frontend.node.data.jiras.length - frontend.node.data.removed.length > 0)">Jira:
             <div *ngFor="let jira of frontend.node.data.jiras">
             <li *ngIf="frontend.node.data.removed.indexOf(jira) < 0">
               <a href="{{jira_url}}{{jira}}" target="_blank">{{jira}}</a> <span *ngIf="frontend.reporters[jira]"> (Reported by {{frontend.reporters[jira]}})</span>
@@ -502,13 +509,15 @@
                 <mat-card-content *ngFor="let comment of frontend.node.data.comments">{{comment.user.username}}({{comment.datetime}}):{{comment.content}}</mat-card-content>
               </mat-card>
             </div>          
+          <div *ngIf="node.data.jiras">  
           <button mat-raised-button  color="primary" style="margin-left: 10px;" [matMenuTriggerFor]="menu">Link to a Jira in Wiki</button>            
           <mat-menu #menu="matMenu">
-            <button mat-menu-item (click)="assignJira()" class="menu-item" >Add a Jira</button>
+            <button mat-menu-item (click)="assignJira(frontend.node)" class="menu-item" >Add a Jira</button>
             <div *ngFor="let jira of data[selectIndex].jiras" >
             <button mat-menu-item (click)="assignNode(jira,frontend.node)" class="menu-item" *ngIf="frontend.node.data.jiras.indexOf(jira.id)<0">{{jira.id}}:{{jira.summary}}</button>              
             </div>
           </mat-menu>
+          
 
           <mat-form-field style="display: block;">
             <mat-label>Add Comments</mat-label>
@@ -537,7 +546,16 @@
               <a href="{{jira_url}}{{jira}}" target="_blank">{{jira}}</a> 
             </li>
           </h3>
-          <h3><b>End Time:{{frontend.end_time}}</b></h3>
+          </div>
+          <h3><b *ngIf="frontend.node.data.version">Version : {{frontend.node.data.version}} | </b><b *ngIf="frontend.node.data.uiversion">UI Version : {{frontend.node.data.uiversion}} | </b><b>End Time:{{frontend.end_time}}</b></h3>
+          <div *ngIf="frontend.node.data.context"><h3 *ngFor="let header of configure.context"><b  *ngIf="frontend.node.data.context[header] && frontend.node.data.context[header].indexOf('http')<0">
+            {{header}}:{{frontend.node.data.context[header]}}
+          </b>        
+        </h3>
+          <div *ngFor="let header of configure.context" ><h3 *ngIf="frontend.node.data.context[header] && frontend.node.data.context[header].indexOf('http') >=0"><b> {{header}}: &nbsp;</b> <a [href]="frontend.node.data.context[header]" target="_blank" >{{frontend.node.data.context[header]}}</a></h3>
+            </div>
+          <hr/>              
+         </div>
           <div *ngFor="let step of frontend.steps"><p [attr.id]="step.result === 'failed'?'error_step_id':null" [ngClass] = "{'error':step.result === 'failed'}">{{step.name}} &nbsp;&nbsp;&nbsp;({{step.duration}})</p>
           <table *ngIf="step.table" style="border:double"><tr *ngFor="let row of step.table">
             <td *ngFor="let item of row" style="border:groove">{{item}}</td>

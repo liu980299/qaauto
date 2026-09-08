@@ -238,8 +238,17 @@ export function updateError(error:any,scenario:any,envData:any){
                     if (!new_error.Scenario.includes(scenario_name)){
                         new_error.Scenario.push(scenario_name);
                     }
+                }
+                if (error.rule){
+                    for(let error_item of scenario.error_summary){
+                        if (error_item.name == error.name && error_item.expected){
+                            new_error.target.push(error_item);
+                        }
+                    }
+                }else{
+                    new_error.target.push(envData.errors_cfg.data[error.name][scenario.name]);
                 }                
-                new_error.target.push(envData.errors_cfg.data[error.name][scenario.name])                
+                
             }
             envData.errors_cfg.queues.added.push(new_error);
             rule = {operation:operation,rule:new_error}
@@ -247,8 +256,7 @@ export function updateError(error:any,scenario:any,envData:any){
         }else{
             if (!del_error.Scenario.includes(scenario.name)){
                 del_error.Scenario.push(scenario.name);
-                del_error.target.push(envData.errors_cfg.data[error.name][scenario.name])
-                rule = {operation:"update",rule:del_error}                                
+                del_error.target.push(envData.errors_cfg.data[error.name][scenario.name])                                    
             }
         }
     }
@@ -257,8 +265,25 @@ export function updateError(error:any,scenario:any,envData:any){
             if (del_error.Scenario.length >= 1){
                 del_error.Scenario.splice(del_error.Scenario.indexOf(scenario.name),1);
             }
+            if (old_error){
+                var sameScenario = false;
+                if (old_error.Scenario.length == del_error.Scenario.length){
+                    sameScenario = true; // check if all scenarios are the same
+                    for (var i= 0; i < old_error.Scenario.length; i++){
+                        if (old_error.Scenario[i] != del_error.Scenario[i]){
+                            sameScenario = false;
+                            break;
+                        }                     
+                    }
+                }
+                if (sameScenario){
+                    envData.errors_cfg.queues.added.splice(envData.errors_cfg.queues.added.indexOf(del_error),1); // remove error from added queue
+                    old_error.updated = false; // mark old error as not updated
+                }
+            }
             rule = {operation:"update",rule:del_error};
         }
+        
     }
     for(let step of error.steps){
         if (step.errors){
@@ -339,9 +364,10 @@ export class ScenarioComponent  implements OnInit {
 
     }
     changeError(error:any,scenario:any,envData:any){
-        var rule = updateError(error,scenario,envData);        
-        this.configChange.emit({type:'Error',data:[rule]});
-        
+        var rule = updateError(error,scenario,envData);      
+        if (rule){
+            this.configChange.emit({type:'Error',data:[rule]});
+        }                  
     }
     setErrorExpected(error:any,option:string){
         if (!this.envData.expected){

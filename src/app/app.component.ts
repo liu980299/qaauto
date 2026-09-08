@@ -8,7 +8,7 @@ import { ChartConfiguration, ChartOptions, ChartType } from "chart.js";
 import { BaseChartDirective } from 'ng2-charts';
 import {Sort, MatSortModule} from '@angular/material/sort';
 import {ErrorStateMatcher} from '@angular/material/core';
-import { Observable, map, startWith } from 'rxjs';
+import { Observable, first, map, startWith } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { DialogChangeDialog } from './dialog.component';
 import { getBadgeText, getErrorBadgeText, getExpectedDupicates, getExpectedError, ScenarioComponent, updateError } from './scenario.component';
@@ -71,6 +71,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
   summary_list = ['Jiras','Errors','Duplicates'];
   search_list = ['Tests','Pages','Tasks','Errors','Duplicates'];
   report_list = ['Tests','Pages','Tasks','Timeline'];
+  error_levels = ['others','High','Medium','Low'];
   update_changes = false;
   treeControl = new NestedTreeControl<TestNode>(node => node.children);
   barChartPlugins = [];
@@ -149,6 +150,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
   ngAfterViewInit(): void {    
    
+  }
+  getChangeCount(node: TestNode): number {
+    return (node.data?.changes?.length ?? 0) + (node.data?.removed?.length ?? 0);
   }
   ngOnInit(){
     if (report_url && report_url.indexOf("jenkins")>0){
@@ -250,6 +254,42 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   var scenario_data:TestNode = {name:scenario,data:feature_item.scenarios[scenario],children:[]};
                   scenario_data.data.feature = feature_data;
                   scenario_data.data.job = job_data;
+                  if (feature_item.scenarios[scenario].session_id){
+                    scenario_data.data.session_id = feature_item.scenarios[scenario].session_id;
+                    scenario_data.data.start_timestamp = feature_item.scenarios[scenario].start_timestamp;
+                    scenario_data.data.end_timestamp = feature_item.scenarios[scenario].end_timestamp;
+                    scenario_data.data.grafana_url = this.configure.grafana_url.replace("{session_id}",scenario_data.data.session_id).replace("{start_time}",scenario_data.data.start_timestamp+"000").replace("{end_time}",scenario_data.data.end_timestamp+   "000");                    
+                  }
+                  if (feature_item.scenarios[scenario].retest_result == "passed"){
+                    feature_checked_cases++;    
+                    scenario_data.data.retest_result = "passed";
+                    scenario_data.data.retest_url = feature_item.scenarios[scenario].retest_url;
+                  }else{                    
+                    if (feature_item.scenarios[scenario].retests){
+                      scenario_data.data.retest_result = "failed";
+                      for (let retest of feature_item.scenarios[scenario].retests || []){
+                        var retest_data:TestNode = {name:"Retest",data:retest,children:[]};
+                        scenario_data.children!.push(retest_data);
+                      }
+                    }
+                  }
+                  if (this.configure.context && this.configure.context.length > 0){
+                    for (let context_item of this.configure.context){
+                      if (feature_item.scenarios[scenario][context_item]){
+                        if (!scenario_data.data.context){
+                          scenario_data.data.context = {};
+                        }
+                        scenario_data.data.context[context_item] = feature_item.scenarios[scenario][context_item]; 
+                      }
+                      if (scenario_data.data.context && scenario_data.data.context.PageURL && scenario_data.data.context.OrgID){ 
+                        var page_url = scenario_data.data.context.PageURL;
+                        var org_id = scenario_data.data.context.OrgID;
+                        if (page_url.indexOf(org_id)<0){
+                          scenario_data.data.context.PageURL = page_url.replaceAll("#TmxPlace","?orgId=" + org_id + "#TmxPlace");
+                        }
+                      }
+                    }
+                  }
                   if (feature_data.children){
                     feature_data.children.push(scenario_data);
                   }              
@@ -269,8 +309,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   scenario_data.data.jiras = [];
                   scenario_data.data.changes = [];
                   scenario_data.data.removed = [];
-                  if(scenario_data.data.JIRA){
-                    feature_checked_cases++;    
+                  if(scenario_data.data.JIRA){                    
                     scenario_data.data.jiras = scenario_data.data.JIRA.split(",");
                   }
                   scenario_data.data.work_url = report_url + "#" + scenario_data.data.url.split("/")[1].split(".")[0];
@@ -739,8 +778,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
                 (data)=>{
                   env.stacks[log_name] = data;
                 }
-                );
-              for (let level in log_errors){
+                );              
+              var level_lists = this.error_levels.filter((item:any)=>item in log_errors);
+              for (let level of level_lists){
                 var sub_total = 0;  
                 // if (category == 'fatal' && log_errors['fatal'].length > 0){
                 //   var fatal_node:TestNode={name:"fatal",children:[],data:{type:"categories"}};
@@ -760,9 +800,15 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   if (level.toLowerCase()=="others"){
                     isRule = false;
                   }                  
-                  for (var category in log_errors[level]){
+                  var category_list:any = [];
+                  for (var category_name in log_errors[level]){
+                   category_list.push(category_name);
+                  }
+                 category_list.sort();                                
+
+                  for (var category of category_list){
                     var category_node:TestNode = {name:category,children:[],data:{type:"categories",name:category,items:{}}};
-                    var category_total = 0;                                    
+                    var category_total = 0;    
                     for (var error_type in log_errors[level][category]){                      
                       var error_type_node:TestNode = {name:error_type,children:[],data:{type:"errors",isRule:isRule,scenarios:[],queues:{}}};                    
                       error_type_node.data.queues.checked = this.errors_cfg.queues.checked.filter((item:any)=>item.Name == error_type&&item.Category == category);
@@ -847,6 +893,16 @@ export class AppComponent implements OnInit, AfterViewInit  {
                               this.initialRule(rule,env.name,log_name);
                               error.rule = rule;  
                               error_node.data.rule = rule;
+                            }else{
+                              for (let rule of checked_errors){                        
+                                if (this.matchRule(rule,error.name)){
+                                  this.initialRule(rule,env.name,log_name);
+                                  scenario_dict[scenario].error.rule = rule.Error;
+                                  error.rule = rule;
+                                  error_node.data.rule = rule;
+                                  break;  
+                                }
+                              }                              
                             }                            
                             error.log_file = log_name;
                             var scenario_item = {scenario:env.tests[scenario],selected:false,error:error,rule:scenario_dict[scenario].error.rule}
@@ -914,6 +970,11 @@ export class AppComponent implements OnInit, AfterViewInit  {
       }
       if (this.infinity_calls.length > 0){
         this.error_message = "Detected possible infinite calls in " + this.infinity_calls.join(",") + ", please select Duplicates in menu!"
+      }
+      if (this.data_type == "test" && this.frontend.node){
+        if (this.frontend.node.name in this.data[this.selectIndex].tests){
+          this.frontend.test = this.data[this.selectIndex].tests[this.frontend.node.name];
+        }
       }
   }
 
@@ -1453,6 +1514,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                 var remove_list:any = [];
                 var scenario_list:any = [];
                 var jira_scenarios:any = [];
+                case_data.children = [];
                 for (let scenario of jira.scenarios){
                   jira_scenarios.push(scenario.name);
                 }
@@ -1564,19 +1626,21 @@ export class AppComponent implements OnInit, AfterViewInit  {
       }
     }
   }
-  getCheckedTests(test_data:any):any{
+  getCheckedTests(test_data:any,countRetestPassed:boolean = false):any{
     var total_tests = 0;
     var checked_tests = 0;
     for(let test_node of test_data.children){      
       if(test_node.children.length == 0){        
         if (test_node.data){
           total_tests++;
-          if (test_node.data.JIRA || test_node.data.changes.length){
+          if (countRetestPassed && test_node.data.retest_result == "passed"){
+            checked_tests++;
+          }else if (!countRetestPassed && (test_node.data.JIRA || (test_node.data.changes && test_node.data.changes.length))){
             checked_tests++;
           }  
         }
       }else{
-        var res = this.getCheckedTests(test_node);
+        var res = this.getCheckedTests(test_node,countRetestPassed);
         total_tests += res.total_tests;
         checked_tests +=  res.checked_tests;
       }
@@ -1589,11 +1653,12 @@ export class AppComponent implements OnInit, AfterViewInit  {
     var length = perspective.data.data.length;
     var new_data: any[] = [];
     var changed = false;
+    var countRetestPassed = perspective.name == "Tests";
     for (var i = 0; i < length; i ++){
       var test_data = perspective.data.data[i];
       if (test_data.name.indexOf("(") > 0){
         var previous = test_data.name;
-        this.getCheckedTests(test_data);
+        this.getCheckedTests(test_data,countRetestPassed);
         if (previous != test_data.name){
           changed = true;
         }
@@ -1655,7 +1720,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
       if (!row.updated){
         var item:any = {};
         for (let key in row){
-          if (key != 'target' && key != 'id'){
+          if (this.errors_cfg.headers.indexOf(key) >= 0){
             item[key] = row[key];
           }
         }
@@ -1665,7 +1730,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
     for (let row of queues.added){
       var item:any = {};
       for (let key in row){
-        if (key != 'target' && key != 'id'){
+        if (this.errors_cfg.headers.indexOf(key) >= 0){
           item[key] = row[key];
         }
       }
@@ -2375,30 +2440,37 @@ export class AppComponent implements OnInit, AfterViewInit  {
       this.setLogs(node);
     }else if (node.data.type && node.data.type == 'errors'){
       this.data_type="errors";      
-      this.frontend = node.data;
+      this.frontend = {};
+      this.frontend.node = node;
     }else if( node.data.type && node.data.type == 'error_scenario'){      
       if (node.data.scenario){
-        this.setScenario(node.data.scenario);
+        node.data.scenario.data.selected = true;
+        this.setTest(node.data.scenario);
+
       }else{
         this.setScenario(node);
       }
     }
     else{
-      this.data_type = 'test';
-      var id_names= node.data.url.split("/");
-      if (window.parent){
-        window.parent.location.hash = id_names[id_names.length - 1].split(".")[0];
-      }else{
-        window.location.hash = id_names[id_names.length - 1].split(".")[0];
-      }    
-      this.dataService.getData(node.data.url).subscribe({next:(data)=>{
-        node.data.data=data;
-        this.setData(node)
-      },error: ()=>{window.location.reload()}
-      }
-      );
-
+      this.setTest(node)
     }
+  }
+
+  setTest(node:any){
+    this.data_type = 'test';
+    var id_names= node.data.url.split("/");
+    if (window.parent){
+      window.parent.location.hash = id_names[id_names.length - 1].split(".")[0];
+    }else{
+      window.location.hash = id_names[id_names.length - 1].split(".")[0];
+    }    
+    this.dataService.getData(node.data.url).subscribe({next:(data)=>{
+      node.data.data=data;
+      this.setData(node)
+    },error: ()=>{window.location.reload()}
+    }
+    );
+
   }
 
   setWorker(session:any,worker:any){
@@ -2677,7 +2749,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
 
   setScenario(scenario:any){
     this.data_type="scenario";
-    var scenario_name = scenario.data.name;
+    var scenario_name = scenario.data.name? scenario.data.name : scenario.name;
     if (scenario_name in this.data[this.selectIndex].tests){
       this.frontend = this.data[this.selectIndex].tests[scenario_name];
       if (scenario.data.error && scenario.data.error.name){
@@ -3402,18 +3474,47 @@ export class AppComponent implements OnInit, AfterViewInit  {
     this.new_jira={id:this.jira.data.id,summary:this.jira.data.summary,previous:this.jira};
     this.jira = null;
   }
-  assignJira(){
+  assignJiraError(){
+    var previous_data_type = this.data_type;
+    var first_scenario = true;
+    for (let scenario of this.node.data.scenarios){
+      if (scenario.scenario.result == "failed"){
+        if (first_scenario){
+          this.assignJira(this.data[this.selectIndex].scenarios[scenario.scenario.name]);          
+          first_scenario = false;
+        }else{
+          this.new_jira.description += "more test failed with the same error:" + scenario.scenario.name + " url " + this.data[this.selectIndex].scenarios[scenario.scenario.name].work_url + "\n";
+          if (!this.new_jira.scenarios){
+            this.new_jira.scenarios = [];
+          }
+          this.new_jira.scenarios.push(this.data[this.selectIndex].scenarios[scenario.scenario.name]);
+        }
+      }
+    }
+    this.new_jira.previous_data_type = previous_data_type;
+  }
+  assignJira(node:any){
     this.data_type = "jira";
     this.jira=null;
-    var description = "AUTO Test -- " + this.frontend.node.name  + " -- failed in Env " + this.data[this.selectIndex].name + " on version : " + this.data[this.selectIndex].version + "\n";
-    description += "The details could be found on url : " + this.frontend.url +"\n";
-    if (this.frontend.node.data.last_success_test){
-      description += "The last success test was performed on " + this.frontend.node.data.last_success_test.test_time + "and version "
-       + this.frontend.node.data.last_success_test.version + "\n";       
-      description += "The passed test detail could be found on the url : " + this.frontend.node.data.last_success_test.url;
+    var description = "AUTO Test -- " + node.name  + " -- failed in Env " + this.data[this.selectIndex].name + " on version : " + this.data[this.selectIndex].version + "\n";
+    description += "The details could be found on url : " + node.data.work_url +"\n";
+    if (node.data.last_success_test){
+      description += "The last success test was performed on " + node.data.last_success_test.test_time + "and version "
+       + node.data.last_success_test.version + "\n";       
+      description += "The passed test detail could be found on the url : " + node.data.last_success_test.url;
     }
     var steps = "";
-    for (let step of this.frontend.steps){
+    var node_steps = node.data.steps;
+    if (!node_steps){
+      if (node.data.data && node.data.data.steps){
+        node_steps = node.data.data.steps;
+      }else{
+        if (node.name in this.data[this.selectIndex].tests){
+          node_steps = this.data[this.selectIndex].tests[node.name].steps;
+        }        
+      }
+    }
+    for (let step of node_steps){
       if (step.result == "passed" || step.result == "failed"){
         if (step.result == "passed"){
           steps += step.name + "\n";
@@ -3441,7 +3542,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
         }
       }      
     }
-    this.new_jira={id:"",summary:"",scenario:this.frontend.node,description:description,steps:steps};
+    this.new_jira={id:"",summary:"",scenario:node,description:description,steps:steps};
   }
   saveJira(){
     var jira = this.new_jira;
@@ -3502,6 +3603,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
             if(jira.scenario){
               if (this.frontend.node.data.type == "errors"){
                 this.assignError(this.data[this.selectIndex].jiras[case_data.data.index],this.frontend.node);
+                this.data_type="errors";
               }else{
                 this.assignNode(this.data[this.selectIndex].jiras[case_data.data.index],this.frontend.node);
                 this.data_type="test";  
