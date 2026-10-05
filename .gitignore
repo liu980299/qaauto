@@ -31,9 +31,13 @@ yarn-error.log
 /src/assets
 # Miscellaneous
 /.angular/cache
+.playwright-mcp/
 .sass-cache/
 /connect.lock
 /coverage
+*.zip
+*.ps1
+*.log
 /libpeerconnection.log
 testem.log
 /typings

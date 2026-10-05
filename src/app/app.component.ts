@@ -151,6 +151,18 @@ export class AppComponent implements OnInit, AfterViewInit  {
   ngAfterViewInit(): void {    
    
   }
+
+  sameFailedStep(node: TestNode): boolean {
+    var failed_step = node.data.failed_step;
+    if ((node.children?.length ?? 0) > 0){
+      for (var retest of node.children??[]){
+        if (retest.data.failed_step != failed_step){
+          return false;
+        }
+      }
+    }
+    return true;
+  }
   getChangeCount(node: TestNode): number {
     return (node.data?.changes?.length ?? 0) + (node.data?.removed?.length ?? 0);
   }
@@ -229,6 +241,18 @@ export class AppComponent implements OnInit, AfterViewInit  {
         var jobs:TestNode[] = [];        
         var auto_node:TestNode = {name:"Automation Test",children:[]}
         var env_check_cases = 0;
+        // in verification mode, checked counts reflect retested scenarios rather than only passed retests
+        var is_verification_mode = data[key].mode == "verification";
+        // lookup of job_name -> scenario name for undefined tests reported on this env
+        var undefined_test_map:any = {};
+        if (data[key].undefined_tests && data[key].undefined_tests.length > 0){
+          for (let undefined_test of data[key].undefined_tests){
+            if (!undefined_test_map[undefined_test.job_name]){
+              undefined_test_map[undefined_test.job_name] = {};
+            }
+            undefined_test_map[undefined_test.job_name][undefined_test.name] = true;
+          }
+        }
         for(let job in data[key].jobs){
           var job_item = data[key].jobs[job];
           var find_feature = false;
@@ -253,6 +277,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
                 for(let scenario in feature_item.scenarios){
                   var scenario_data:TestNode = {name:scenario,data:feature_item.scenarios[scenario],children:[]};
                   scenario_data.data.feature = feature_data;
+                  scenario_data.data.scenario_name = scenario;
                   scenario_data.data.job = job_data;
                   if (feature_item.scenarios[scenario].session_id){
                     scenario_data.data.session_id = feature_item.scenarios[scenario].session_id;
@@ -267,11 +292,20 @@ export class AppComponent implements OnInit, AfterViewInit  {
                   }else{                    
                     if (feature_item.scenarios[scenario].retests){
                       scenario_data.data.retest_result = "failed";
+                      if (is_verification_mode){
+                        feature_checked_cases++;
+                      }
                       for (let retest of feature_item.scenarios[scenario].retests || []){
+                        retest["scenario_name"] = scenario;   
+                        retest["is_retest"] = true;                 
                         var retest_data:TestNode = {name:"Retest",data:retest,children:[]};
                         scenario_data.children!.push(retest_data);
                       }
                     }
+                  }
+                  // undefined (missing step def) takes precedence over any passed/failed retest status
+                  if (undefined_test_map[job] && undefined_test_map[job][scenario]){
+                    scenario_data.data.retest_result = "undefined";
                   }
                   if (this.configure.context && this.configure.context.length > 0){
                     for (let context_item of this.configure.context){
@@ -427,6 +461,10 @@ export class AppComponent implements OnInit, AfterViewInit  {
           env_data.version = data[key].version;  
           env_data.start_time = data[key].start_time;
           env_data.end_time = data[key].end_time;
+          env_data.mode = data[key].mode;
+          if (data[key].mode && data[key].mode == "verification"){
+            env_data.error_message = data[key].Env + ": this retest is in verification mode, so indicators reflect how many scenarios were retested for verification of a group of similar failed steps, not how many retests passed.";
+          }
           env_data.timelines.containers.sort((a:any,b:any)=>((a.name > b.name)?1:((b.name > a.name)?-1:0)))
         }        
         var summary_data = {name:data[key].Env,data:data[key].summary};
@@ -435,6 +473,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
         env_data.summary =  summary_data.data[summary_data.data.length - 1];
         this.data.push(env_data); 
       }
+      this.data[this.selectIndex].error_message = this.data[this.selectIndex]?.error_message;
       this.data.sort((a:any,b:any)=>(a.name > b.name)?1:((b.name > a.name)?-1:0));  
       this.expandNode();
       this.summarys.sort((a:any,b:any)=>(a.name > b.name)?1:((b.name > a.name)?-1:0));
@@ -1626,39 +1665,46 @@ export class AppComponent implements OnInit, AfterViewInit  {
       }
     }
   }
-  getCheckedTests(test_data:any,countRetestPassed:boolean = false):any{
+  getCheckedTests(test_data:any,countRetestPassed:boolean = false,isVerification:boolean = false):any{
     var total_tests = 0;
     var checked_tests = 0;
     for(let test_node of test_data.children){      
-      if(test_node.children.length == 0){        
+      // a scenario whose only children are retry attempts is still a single test, not a container
+      var isRetestOnly = test_node.children.length > 0 && test_node.children.every((c:any)=>c.data && c.data.is_retest);
+      if(test_node.children.length == 0 || isRetestOnly){        
         if (test_node.data){
           total_tests++;
-          if (countRetestPassed && test_node.data.retest_result == "passed"){
+          if (countRetestPassed && (test_node.data.retest_result == "passed" || (isVerification && test_node.data.retest_result == "failed"))){
             checked_tests++;
           }else if (!countRetestPassed && (test_node.data.JIRA || (test_node.data.changes && test_node.data.changes.length))){
             checked_tests++;
           }  
         }
       }else{
-        var res = this.getCheckedTests(test_node,countRetestPassed);
+        var res = this.getCheckedTests(test_node,countRetestPassed,isVerification);
         total_tests += res.total_tests;
         checked_tests +=  res.checked_tests;
       }
     }
-    test_data.name = test_data.name.split("(")[0] + "(" + checked_tests +"/" + total_tests + ")";
+    if (test_data.data && test_data.data.retests){
+      test_data.name = test_data.name.split("(")[0];
+    }else{
+      test_data.name = test_data.name.split("(")[0] + "(" + checked_tests +"/" + total_tests + ")";
+    }
+    
     return {total_tests:total_tests,checked_tests:checked_tests}
 
   }
-  resetCheckedTests(perspective:any){
+  resetCheckedTests(perspective:any,isVerification:boolean = false){
     var length = perspective.data.data.length;
     var new_data: any[] = [];
     var changed = false;
-    var countRetestPassed = perspective.name == "Tests";
+    var countRetestPassed = perspective.name == "Tests" || perspective.name == "Pages";
     for (var i = 0; i < length; i ++){
       var test_data = perspective.data.data[i];
       if (test_data.name.indexOf("(") > 0){
         var previous = test_data.name;
-        this.getCheckedTests(test_data,countRetestPassed);
+        this.getCheckedTests(test_data,countRetestPassed,isVerification);
         if (previous != test_data.name){
           changed = true;
         }
@@ -1674,8 +1720,9 @@ export class AppComponent implements OnInit, AfterViewInit  {
     var changes = 0;
     var changedJiras = 0;
     for (let env of this.data){
-      this.resetCheckedTests(env.perspectives[0]);
-      this.resetCheckedTests(env.perspectives[1]);
+      var isVerification = env.mode == "verification";
+      this.resetCheckedTests(env.perspectives[0],isVerification);
+      this.resetCheckedTests(env.perspectives[1],isVerification);
       for (let case_data of env.perspectives[2].data.data){
         if (!case_data.data.set_pass && case_data.data.changes.length + case_data.data.removed.length > 0){
 
@@ -2388,6 +2435,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
     }
     
     console.log(node);
+    console.log(this.sameFailedStep(node));
     if (!node.data){
       this.data_type = "summary";
       this.frontend = {}
@@ -2905,20 +2953,26 @@ export class AppComponent implements OnInit, AfterViewInit  {
         if (this.frontend.url){
           var path_items = this.frontend.url.split("//");
           var container_name = null;
-          for (let container of this.data[this.selectIndex].timelines.containers){
-            for (let scenario of container.scenarios){
-              if (scenario.name == node.name){
-                container_name = container.name;
+          if (this.frontend.node.data.container){
+            container_name = this.frontend.node.data.container;
+          }else{
+            for (let container of this.data[this.selectIndex].timelines.containers){
+              for (let scenario of container.scenarios){
+                if (scenario.name == node.name){
+                  container_name = container.name;
+                  break;
+                }
+              }
+              if (container_name){
                 break;
               }
             }
             if (container_name){
-              break;
+              container_name = "container" + parseInt(container_name.substr(9));
             }
           }
-          if (container_name){
-            var containerName = "container" + parseInt(container_name.substr(9));
-            this.frontend.screenshots_url = path_items[0] + "//" + path_items[1] + "/artifact/screenshots-" + containerName + ".tar.gz";
+          if (container_name){            
+            this.frontend.screenshots_url = path_items[0] + "//" + path_items[1] + "/artifact/screenshots-" + container_name + ".tar.gz";
           }
         }
         if (node.data.jiras){
@@ -3025,6 +3079,7 @@ export class AppComponent implements OnInit, AfterViewInit  {
   }
   changeEnv(_event:any){
     this.selectIndex = _event;
+    this.error_message = this.data[this.selectIndex]?.error_message;
     if (this.data_type=="report" || this.data_type=="test"){
       this.setReportData();
     }else{      

@@ -57,8 +57,11 @@
           <!-- This is the tree node template for leaf nodes -->
           <mat-tree-node *matTreeNodeDef="let node" matTreeNodeToggle>
             <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unassigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>
+            <span *ngIf="perspective.name!='Jiras'&&node.data&&node.name != 'Retest' && (!node.data.retest_result||node.data.retest_result=='undefined')" [matBadge]="'!'" 
+            [matBadgeHidden]="node.data.retest_result!='undefined'||perspective.name=='Errors'||perspective.name=='Duplicates'" matBadgeColor="accent"  matBadgeSize="medium"></span>
             <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
-            <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0))"
+            <span *ngIf="perspective.name=='Pages'&&(!node.data||(!node.data.url&&!node.data.scenario_url&&node.name!='Retest'))">{{node.name}}</span>
+            <button  class="scenario-text" (click)="selectNode(node)"  *ngIf="perspective.name!='Pages'&&(workspace!='Tasks'||(node.data&&(!node.data.scenarios||node.data.scenarios.length>0)))||perspective.name=='Pages'&&node.data&&(node.data.url||node.data.scenario_url||node.name=='Retest')"
             [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && (!node.data.is_new||node.data.failed)"
             [class.jira]="node.data && node.data.JIRA && !node.data.selected"
             [class.expected] =  "(perspective.name=='Duplicates' && node.data.is_duplicate_expected) || (perspective.name=='Errors' && node.data.error && node.data.error.expected)"
@@ -79,14 +82,17 @@
                   </mat-icon>
                 </button>
                 <span *ngIf="perspective.name=='Duplicates'&&node.data&&node.data.infinite_calls" [matBadge]="'!'" [matBadgeHidden]="!node.data.infinite_calls" matBadgeColor="accent"  matBadgeSize="medium"></span>            
-                <span *ngIf="perspective.name!='Tasks' && perspective.name!='Jiras' && (!node.data )">{{node.name}}</span>
-                <button *ngIf="(perspective.name=='Tests' || perspective.name=='Pages')&&node.data" [class.selected]="node.data && node.data.selected" [matBadge]="getChangeCount(node)" [matBadgeHidden]="getChangeCount(node) == 0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)"
+                    <span *ngIf="perspective.name=='Pages'&&(!node.data||(!node.data.url&&!node.data.scenario_url&&node.name!='Retest')) || (perspective.name!='Tasks' && perspective.name!='Jiras' && perspective.name!='Pages' && (!node.data )) || ((perspective.name=='Errors'||perspective.name=='Duplicates') && node.data && node.data.type!='errors')">{{node.name}}</span>
+                    <span *ngIf="perspective.name!='Jiras'&&node.data&&node.data.assigned" [matBadge]="getShortName(node.data.assigned)" [matBadgeHidden]="(!node.data.assigned)||node.data.assigned=='Unassigned'" matBadgeColor="primary"  matBadgeSize="medium"></span>
+                    <span *ngIf="perspective.name!='Jiras'&&perspective.name!='Tasks' &&node.data&&node.name != 'Retest'" [matBadge]="'!'"
+                     [matBadgeHidden]="sameFailedStep(node)||perspective.name=='Errors'||perspective.name=='Duplicates'||perspective.name=='Pages'" matBadgeColor="accent"  matBadgeSize="medium"></span>
+                    <button *ngIf="(perspective.name=='Tests'&&node.data)||((perspective.name=='Pages'||perspective.name=='Tasks')&&node.data&&(node.data.url||node.data.scenario_url||node.name=='Retest'))" [class.selected]="node.data && node.data.selected" [matBadge]="getChangeCount(node)" [matBadgeHidden]="getChangeCount(node) == 0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)"
                       [class.error]="node.data && node.data.error && !node.data.selected &&!node.data.JIRA && (!node.data.is_new||node.data.failed)"
                       [class.jira]="node.data && node.data.JIRA && !node.data.selected"
                       [class.changed]="getChangeCount(node) > 0 && !node.data.selected" 
                       [class.selected]="node.data && node.data.selected"            
             >{{node.name}}</button>
-                <button *ngIf="perspective.name=='Tasks'" [class.selected]="node.data && node.data.selected" [matBadge]="node.data.task_changes" [matBadgeHidden]="node.data.task_changes==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
+                <button *ngIf="perspective.name=='Tasks' && !(node.data.url||node.data.scenario_url)" [class.selected]="node.data && node.data.selected" [matBadge]="node.data.task_changes" [matBadgeHidden]="node.data.task_changes==0" matBadgeColor="accent"  matBadgeSize="small" (click)="showTask(node)">{{node.name}}</button>
                 <button *ngIf="perspective.name=='Errors' && node.data.type=='errors'" [class.selected]="node.data && node.data.selected" (click)="selectNode(node)">{{node.name}}</button>
                 <button *ngIf="perspective.name=='Jiras'" [class.selected]="node.data && node.data.selected" [matBadge]="getChangeCount(node)" [class.selected]="node.data && node.data.selected" 
                 [matBadgeHidden]="getChangeCount(node) == 0" matBadgeColor="accent"  matBadgeSize="small" (click)="selectNode(node)">
@@ -207,7 +213,7 @@
           <mat-tab>
             <h2>{{task.name}}</h2>
             <h3 *ngIf="task.jiras && task.jiras.length > 0">Total {{task.jiras.length}} still open Jiras found by automation</h3>
-            <h3>Total {{task.scenario_list.length - task.removed.length}} scenarios</h3>        
+            <h3>Total {{task.scenario_list.length - task.removed.length}} scenario(s)</h3>        
             <h3 *ngIf="task.passed_jiras && task.passed_jiras.length > 0">Total {{task.passed_jiras.length}} jiras have been passed the auto test and probably could be marked as verified</h3>
             <h3 *ngIf="task.removed_scenarios">The tests for {{task.removed_scenarios.length}} scenarios have been moved out of daily auto test</h3>
             
@@ -473,21 +479,21 @@
       <mat-tab-group *ngIf="data_type=='test' && frontend">
         
         <mat-tab label="Steps">          
-          <div style="display:inline-flex;"><a id="frontend_test_name" *ngIf="frontend.url" [href]="frontend.url" target="_blank">{{frontend.name}}</a>
-            <button mat-raised-button (click)="copyLink()" color="primary" style="margin-left: 10%;">Copy</button>
+          <div style="display:inline-flex;"><a id="frontend_test_name" *ngIf="frontend.url" [href]="frontend.url" target="_blank">{{frontend.node.data.scenario_name}}</a>
+            <button mat-raised-button (click)="copyLink()" color="primary" style="margin-left: 10%;">Copy</button>          
             <button mat-raised-button (click)="gotoError()" color="primary" style="margin-left: 10px;">Error Step</button>    
-            <button mat-raised-button (click)="manageSwitch()" color="primary" style="margin-left: 10px;" [disabled]="!last_build">{{frontend.show_management}}</button>
-            <button mat-raised-button (click)="historySwitch()" color="primary" style="margin-left: 10px;" *ngIf="node.data.history">{{frontend.show_history}}</button>
+            <button mat-raised-button (click)="manageSwitch()" color="primary" style="margin-left: 10px;" [disabled]="!last_build||frontend.node.data.is_retest">{{frontend.show_management}}</button>
+            <button mat-raised-button (click)="historySwitch()" color="primary" style="margin-left: 10px;" *ngIf="node.data.history">{{frontend.show_history}}</button>            
             
            </div>            
            <h3><a [href]="frontend.screenshots_url" target="_blank" *ngIf="frontend.screenshots_url" class="button">Download Screenshots Archive</a></h3> 
-           <h2 *ngIf="frontend.node.data.retest_result && frontend.node.data.retest_result == 'passed'"><a href="{{frontend.node.data.retest_url}}">Retest Passed</a></h2>
+           <h3 class="expected" *ngIf="frontend.node.data.retest_result && frontend.node.data.retest_result == 'passed'"><a href="{{frontend.node.data.retest_url}}" target="_blank">Retest Passed</a></h3>
            <h3 *ngIf="frontend.node.data.last_success_test">
               <a [href]="frontend.node.data.last_success_test.url" target="_blank">The last successful test was performed {{frontend.node.data.last_success_test.test_time}}
                  with Portal version {{frontend.node.data.last_success_test.version}}</a>
               </h3>
               
-          <h3 *ngIf="frontend.node.data.session_id"><a [href]="frontend.node.data.grafana_url" target="_blank">Grafana Ingress Log</a></h3>
+          <h3 *ngIf="frontend.node.data.session_id"><a [href]="frontend.node.data.grafana_url" target="_blank">Grafana Ingress Log(session id:{{frontend.node.data.session_id}})</a></h3>
           <h3 *ngIf="frontend.node.data.jiras && (frontend.node.data.jiras.length - frontend.node.data.removed.length > 0)">Jira:
             <div *ngFor="let jira of frontend.node.data.jiras">
             <li *ngIf="frontend.node.data.removed.indexOf(jira) < 0">
